@@ -8,14 +8,17 @@
 
 ## 1. Project Overview
 
-Floppy.cloud is a no-login, browser-based file transfer application. A sender selects a file, receives a short transfer code, and shares that code with a recipient. The recipient enters the code and the file streams directly peer-to-peer via WebRTC data channels. No file is stored on any server. No user account is required.
+Floppy.cloud is a no-login, browser-based file transfer application. Any user lands on `floppy.cloud` and clicks **"Start Transfer"** — whoever clicks first becomes the sender and is assigned a unique two-word phrase (e.g. `golden-harbor`). Their shareable link is `https://floppy.cloud/golden-harbor#key=...`. They share that link via QR code, copy-paste, or by reading the two words aloud. The recipient opens the link or navigates to `floppy.cloud` and types the phrase manually. Once both peers are connected, **both screens display the same phrase prominently** so either party can verbally confirm they're on the right connection before any file is dropped. Files then stream directly peer-to-peer via WebRTC data channels. No file is ever stored on any server. No user account is required.
 
 ### Core Principles
 - Files travel directly between browsers — never stored on Cloudflare infrastructure during live transfer
 - No authentication, no accounts, no cookies
-- Rate limiting enforced by IP + transfer code to prevent abuse
-- Async fallback: if the recipient is not online within the session window, the sender is notified and the session expires cleanly
-- End-to-end encrypted in transit (DTLS-SRTP is built into WebRTC; additionally AES-256 client-side encryption is layered on top of the data channel)
+- Phrase is the room identifier AND the human-readable verification token — both peers see it on screen
+- AES-256 encryption key travels only in the URL fragment (`#key=...`) — never sent to any server
+- Rate limiting enforced by IP to prevent abuse and phrase brute-forcing
+- Session ends when the sender explicitly disconnects — the link is permanently expired thereafter
+- Inactivity TTL (30 min) as a safety net for abandoned sessions
+- End-to-end encrypted in transit (DTLS-SRTP built into WebRTC) + AES-256-GCM client-side layer on top
 
 ---
 
@@ -65,7 +68,7 @@ floppycloud/
 │       │   ├── crypto.ts         # AES-256-GCM client-side encryption
 │       │   ├── transfer.ts       # Chunked file send/receive logic
 │       │   ├── signaling.ts      # WebSocket client for Worker
-│       │   └── codes.ts          # Transfer code generation/validation
+│       │   └── phrase.ts         # Client-side phrase validation & display formatting
 │       ├── ui/
 │       │   ├── sender.ts         # Sender flow UI
 │       │   ├── receiver.ts       # Receiver flow UI
@@ -73,8 +76,7 @@ floppycloud/
 │       │   └── toast.ts          # Error/status notifications
 │       └── pages/
 │           ├── home.ts           # Landing page (send or receive)
-│           ├── send.ts           # Sender page
-│           └── receive.ts        # Receiver page
+│           └── room.ts           # Room page (handles both sender & receiver roles)
 │
 └── worker/                       # Cloudflare Worker (signaling + rate limiting)
     ├── package.json
@@ -114,22 +116,17 @@ new_classes = ["TransferRoom"]
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
 id = "<YOUR_KV_NAMESPACE_ID>"
-
-[[kv_namespaces]]
-binding = "RATE_LIMIT_KV"
-id = "<YOUR_KV_PREVIEW_NAMESPACE_ID>"
 preview_id = "<YOUR_KV_PREVIEW_NAMESPACE_ID>"
 
 [vars]
 ENVIRONMENT = "production"
 MAX_FILE_SIZE_MB = "2048"
-SESSION_TTL_SECONDS = "600"
+SESSION_TTL_SECONDS = "1800"
 CHUNK_SIZE_BYTES = "65536"
 
 # Secrets — set via: wrangler secret put <KEY>
 # CF_CALLS_APP_ID
 # CF_CALLS_APP_SECRET
-# RATE_LIMIT_SECRET
 ```
 
 ### Required Cloudflare Resources to Create Before Development
@@ -153,15 +150,14 @@ All messages are JSON. Both client and server use this envelope:
 ```typescript
 // types.ts (shared)
 type MessageType =
-  | "CREATE_ROOM"       // Sender → Worker: create a session
-  | "ROOM_CREATED"      // Worker → Sender: confirms code + ICE config
-  | "JOIN_ROOM"         // Receiver → Worker: join by code
+  | "JOIN_ROOM"         // Receiver → Worker: join by code (unused in WS — receiver connects by URL path)
   | "PEER_JOINED"       // Worker → Sender: receiver connected
   | "OFFER"             // Sender → Worker → Receiver: SDP offer
   | "ANSWER"            // Receiver → Worker → Sender: SDP answer
   | "ICE_CANDIDATE"     // Either → Worker → Other: ICE candidate
-  | "TRANSFER_COMPLETE" // Either peer → Worker: done signal
-  | "ROOM_EXPIRED"      // Worker → Either: session TTL exceeded
+  | "TRANSFER_COMPLETE" // Sender → Worker → Receiver: one file done
+  | "DISCONNECT"        // Sender → Worker → Receiver: session ending, link expired
+  | "ROOM_EXPIRED"      // Worker → Either: inactivity TTL exceeded
   | "ERROR"             // Worker → Either: error with code
 
 interface SignalMessage {
@@ -174,14 +170,16 @@ interface SignalMessage {
 ### Signaling Flow
 
 ```
-Sender                    Worker (DO)                 Receiver
+  REST (pre-WS)             Worker (DO)                 Receiver
   |                           |                           |
-  |-- WS connect -----------> |                           |
-  |-- CREATE_ROOM ----------> |                           |
-  |<- ROOM_CREATED (code) --- |                           |
-  |   (displays code to user) |                           |
+  |-- POST /api/rooms ------> | (creates room, returns    |
+  |<- { phrase } ------------ |  phrase to sender)        |
+  |                           |                           |
+Sender                        |                           |
+  |-- WS connect (/phrase) -> |                           |
+  |   role=sender             |                           |
   |                           | <--- WS connect --------- |
-  |                           | <--- JOIN_ROOM (code) --- |
+  |                           |      role=receiver        |
   |<- PEER_JOINED ----------- |                           |
   |-- OFFER (SDP) ----------> | --- OFFER ------------->  |
   |                           | <-- ANSWER -------------- |
@@ -191,9 +189,11 @@ Sender                    Worker (DO)                 Receiver
   |                           |                           |
   |======= Direct WebRTC Data Channel (P2P) ==============|
   |                           |                           |
-  |-- TRANSFER_COMPLETE ----> |                           |
-  |                           | --- TRANSFER_COMPLETE ->  |
-  |                           | [DO self-destructs]       |
+  |-- TRANSFER_COMPLETE ----> | --- TRANSFER_COMPLETE ->  | (one file done, room stays open)
+  |   (repeat for more files) |                           |
+  |-- DISCONNECT -----------> | --- DISCONNECT -------->  |
+  |                           | [DO tears down, link      |
+  |                           |  permanently expired]     |
 ```
 
 ---
@@ -216,7 +216,7 @@ interface RoomState {
 
 export class TransferRoom extends DurableObject {
   private state: RoomState;
-  private readonly TTL_MS: number = 600_000; // 10 minutes
+  private readonly TTL_MS: number = 1_800_000; // 30 minutes
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -284,11 +284,16 @@ export class TransferRoom extends DurableObject {
     }
 
     if (msg.type === "TRANSFER_COMPLETE") {
+      // Relay to other peer — room stays open for subsequent files
       target?.send(JSON.stringify({ type: "TRANSFER_COMPLETE" }));
-      // Brief delay then clean up
-      await new Promise(r => setTimeout(r, 2000));
-      ws.close(1000, "Transfer complete");
-      target?.close(1000, "Transfer complete");
+    }
+
+    if (msg.type === "DISCONNECT") {
+      // Sender is ending the session — notify receiver and tear down
+      target?.send(JSON.stringify({ type: "DISCONNECT" }));
+      await new Promise(r => setTimeout(r, 500));
+      this.state.senderSocket?.close(1000, "Session ended");
+      this.state.receiverSocket?.close(1000, "Session ended");
       await this.ctx.storage.deleteAll();
     }
   }
@@ -315,7 +320,7 @@ export class TransferRoom extends DurableObject {
 import { TransferRoom } from "./room";
 import { checkRateLimit, recordRequest } from "./ratelimit";
 import { getTurnCredentials } from "./turn";
-import { generateCode } from "./utils";
+import { generatePhrase, isValidPhrase } from "./utils";
 
 export { TransferRoom };
 
@@ -342,15 +347,14 @@ export default {
       const limited = await checkRateLimit(env, ip, "create", 10, 60); // 10 creates/min per IP
       if (limited) return new Response("Rate limit exceeded", { status: 429, headers: corsHeaders });
 
-      const code = generateCode(); // e.g. "WOLF-7342"
-      const id = env.TRANSFER_ROOM.idFromName(code);
+      const phrase = generatePhrase(); // e.g. "golden-harbor"
+      // Validate phrase format as defense-in-depth
+      if (!isValidPhrase(phrase)) return new Response("Invalid phrase", { status: 400 });
+      const id = env.TRANSFER_ROOM.idFromName(phrase);
       const stub = env.TRANSFER_ROOM.get(id);
-
-      // Pre-warm the DO
-      await stub.fetch(new Request(`https://room/init?code=${code}`));
       await recordRequest(env, ip, "create");
 
-      return new Response(JSON.stringify({ code }), {
+      return new Response(JSON.stringify({ phrase }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -501,28 +505,83 @@ export async function getTurnCredentials(env: Env): Promise<TurnCredentials> {
 
 ---
 
-## 10. Transfer Code Generation
+## 10. Phrase Generation
 
 **File:** `worker/src/utils.ts`
 
-Codes are human-readable, 8 characters, format `WORD-NNNN`. Avoids ambiguous characters. Easy to read aloud.
+Phrases are exactly **two lowercase words** separated by a single hyphen: `adjective-noun` (e.g. `golden-harbor`, `silent-ridge`, `copper-tide`). Wordlists of ~1,024 adjectives × ~1,024 nouns give approximately **1 million combinations**. With 30-minute session TTLs and rate limiting at 10 room creations per IP per minute, brute-forcing is computationally impractical. No numbers — spoken phrases should be clean and unambiguous ("golden harbor", not "golden harbor four eight two").
+
+Words are chosen to be: unambiguous when spoken aloud, phonetically distinct from each other, free of offensive combinations (curated list), and concrete/visual so they're memorable.
+
+The phrase IS the URL path: `floppy.cloud/golden-harbor` — no query parameters needed for routing. The AES key travels only in the fragment: `floppy.cloud/golden-harbor#key=<base64>`.
 
 ```typescript
-const WORDS = [
-  "WOLF", "BEAR", "HAWK", "DUCK", "CRAB", "FROG", "LYNX", "MOTH",
-  "DOVE", "MINK", "CROW", "WASP", "IBIS", "KITE", "NEWT", "PIKE",
-  "VOLE", "WREN", "SLUG", "TOAD", "SEAL", "DART", "BOLT", "GUST",
-  "TIDE", "DUNE", "COVE", "REEF", "MIST", "HAZE", "GLOW", "FLUX",
+const ADJECTIVES = [
+  "amber", "ancient", "arctic", "autumn", "azure", "blazing", "bold",
+  "calm", "cedar", "coastal", "cobalt", "copper", "coral", "cosmic",
+  "crimson", "crystal", "curious", "dappled", "dawn", "deep", "desert",
+  "distant", "drifting", "dusk", "dusty", "electric", "emerald", "empty",
+  "endless", "faded", "fallen", "fern", "fierce", "floating", "foggy",
+  "forest", "frosted", "gentle", "gilded", "glacial", "golden", "granite",
+  "gravel", "hollow", "horizon", "humble", "indigo", "inland", "iron",
+  "ivory", "jade", "jagged", "jasper", "kind", "lavender", "leafy",
+  "lemon", "lunar", "marble", "meadow", "misty", "mossy", "narrow",
+  "noble", "northern", "obsidian", "ocean", "olive", "onyx", "opal",
+  "pale", "patient", "pearl", "pebble", "pine", "plain", "polar",
+  "quiet", "radiant", "ragged", "rapid", "raven", "remote", "rocky",
+  "rosy", "rough", "russet", "rustic", "sable", "sacred", "saffron",
+  "sandy", "sapphire", "scarlet", "serene", "shaded", "shallow", "silver",
+  "slate", "slow", "smoky", "snowy", "solar", "somber", "sparse",
+  "starlit", "steady", "steep", "still", "stony", "stormy", "sudden",
+  "summer", "sunlit", "swift", "tangerine", "teal", "timber", "twilight",
+  "upper", "vast", "velvet", "verdant", "violet", "vivid", "wandering",
+  "warm", "weathered", "wide", "wild", "winter", "wispy", "wooden",
+  "yellow", "zealous", "zenith", "zephyr",
 ];
 
-export function generateCode(): string {
-  const word = WORDS[Math.floor(Math.random() * WORDS.length)];
-  const num = Math.floor(1000 + Math.random() * 9000);
-  return `${word}-${num}`;
+const NOUNS = [
+  "anchor", "anvil", "apex", "arch", "arrow", "atlas", "bay", "beacon",
+  "birch", "blade", "bluff", "boulder", "bridge", "brook", "buoy",
+  "cabin", "canopy", "canyon", "cape", "cedar", "channel", "cliff",
+  "cloud", "coast", "compass", "cove", "crater", "creek", "crest",
+  "delta", "depot", "dune", "eagle", "ember", "falcon", "fern",
+  "ferry", "field", "flint", "forge", "fountain", "fox", "gale",
+  "gate", "glacier", "gorge", "granite", "grove", "gulf", "harbor",
+  "haven", "hawk", "heath", "helm", "heron", "hill", "hollow",
+  "horizon", "inlet", "island", "kelp", "keystone", "lagoon", "lantern",
+  "larch", "ledge", "lighthouse", "linden", "lodge", "loft", "maple",
+  "marsh", "meadow", "mesa", "mill", "mist", "moon", "moor",
+  "moss", "moth", "mountain", "narrows", "needle", "nest", "oak",
+  "oar", "orbit", "osprey", "outpost", "owl", "peak", "pebble",
+  "pier", "pilot", "pine", "pinnacle", "plain", "plateau", "plover",
+  "pond", "portal", "prairie", "prism", "quarry", "quartz", "raven",
+  "reef", "ridge", "river", "robin", "rock", "rook", "runnel",
+  "saddle", "sage", "sail", "salmon", "sandbar", "shelf", "shore",
+  "signal", "slope", "snipe", "source", "spar", "spit", "spruce",
+  "starling", "stone", "storm", "summit", "swallow", "swift", "talon",
+  "thistle", "thorn", "tide", "timber", "torch", "tower", "trail",
+  "tundra", "vale", "valley", "vault", "vessel", "vole", "wave",
+  "waypoint", "weir", "willow", "wind", "wolf", "wood", "wren",
+];
+
+export function generatePhrase(): string {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+  return `${adj}-${noun}`;
 }
 
-export function isValidCode(code: string): boolean {
-  return /^[A-Z]{3,5}-\d{4}$/.test(code);
+export function isValidPhrase(phrase: string): boolean {
+  // Matches lowercase adjective-noun format, 6–40 chars
+  return /^[a-z]+-[a-z]+$/.test(phrase) && phrase.length >= 6 && phrase.length <= 40;
+}
+
+// Display helper — capitalises each word for on-screen verification badge
+export function formatPhraseForDisplay(phrase: string): string {
+  return phrase
+    .split("-")
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" · ");
+  // e.g. "Golden · Harbor"
 }
 ```
 
@@ -539,9 +598,9 @@ export class SignalingClient {
   private ws: WebSocket | null = null;
   private handlers: Map<string, (payload: unknown) => void> = new Map();
 
-  async connect(code: string, role: "sender" | "receiver"): Promise<void> {
+  async connect(phrase: string, role: "sender" | "receiver"): Promise<void> {
     const wsBase = import.meta.env.VITE_API_URL.replace("https", "wss");
-    this.ws = new WebSocket(`${wsBase}/api/rooms/${code}/ws?role=${role}`);
+    this.ws = new WebSocket(`${wsBase}/api/rooms/${phrase}/ws?role=${role}`);
 
     return new Promise((resolve, reject) => {
       this.ws!.onopen = () => resolve();
@@ -748,47 +807,102 @@ export async function decryptChunk(
 
 ## 12. Sender & Receiver Flows
 
-### Sender Flow (pages/send.ts)
+### Sender Flow (pages/room.ts — sender role)
 
-1. User drags/drops or selects a file
-2. Validate file size against `MAX_FILE_SIZE_MB` (default 2GB)
-3. `POST /api/rooms` → receive `{ code }`
-4. Generate AES-256 `CryptoKey`, export to Base64
-5. Construct shareable link: `https://floppy.cloud/receive#code=WOLF-7342&key=<base64key>`
-6. Display code prominently (`WOLF-7342`), display full link, show QR code
-7. Open WebSocket as `sender` role
-8. Wait for `PEER_JOINED` signal
-9. Once receiver joins: create `RTCPeerConnection`, create data channel `"fileTransfer"`, create SDP offer, send via signaling
-10. On `ANSWER`: set remote description
-11. On `ICE_CANDIDATE`: add to peer connection
-12. On data channel open: call `sendFile()`
-13. On complete: show confirmation, option to send another
+The sender never selects a file first. The link is the starting point.
 
-### Receiver Flow (pages/receive.ts)
+**Phase 1 — Link Generation (immediate on page load):**
+1. Page loads → automatically `POST /api/rooms` → receive `{ phrase }`
+2. Generate AES-256 `CryptoKey`, export to Base64
+3. Construct shareable link: `https://floppy.cloud/golden-harbor#key=<base64key>`
+4. Store phrase in `sessionStorage` as `floppycloud_owned_phrase` — marks this tab as the sender
+5. Open WebSocket as `sender` role
+6. Display the shareable link with copy button and QR code
+7. Show connection status: **unlocked padlock icon, grey/amber** — "Waiting for receiver…"
 
-1. Page loads, parse `#code=` and `#key=` from URL fragment (these never hit the server)
-2. If fragment present: auto-fill code and proceed; otherwise show manual code entry UI
-3. Import AES key from Base64 fragment
-4. Open WebSocket as `receiver` role with the code
-5. Create `RTCPeerConnection` with ICE config from `/api/turn`
-6. On `OFFER`: set remote description, create answer, send via signaling
-7. On `ICE_CANDIDATE`: add to peer connection
-8. On data channel open: call `receiveFile()`
-9. On `METADATA` message: show file name, size, type to user before download begins
-10. On complete: auto-trigger browser download via `URL.createObjectURL(blob)`
+**Phase 2 — Receiver Joins (live state):**
+7. On `PEER_JOINED` signal: initiate WebRTC handshake (create `RTCPeerConnection`, data channel `"fileTransfer"`, SDP offer)
+8. On `ANSWER` + ICE exchange complete: P2P connection established
+9. Transition status indicator to: **locked padlock icon, green** — "Connected — encrypted"
+10. Reveal file transfer UI (drag/drop zone + file picker button) — this UI is hidden until live
+
+**Phase 3 — Transfer:**
+11. User selects or drops a file — validate size ≤ `MAX_FILE_SIZE_MB`
+12. Call `sendFile()` — show animated transfer progress
+13. On complete: show "✓ Sent" confirmation
+14. Return to file drop zone — sender can immediately drop another file (repeat Phase 3)
+15. "Disconnect" button always visible while live — terminates session
+
+**Phase 4 — Disconnect:**
+16. Sender clicks Disconnect (or closes tab)
+17. Send `DISCONNECT` signal → Worker closes room → receiver notified
+18. Room is destroyed. Link is permanently expired.
 
 ---
 
-## 13. URL Fragment Key Distribution
+### Receiver Flow (pages/room.ts — receiver role)
 
-The encryption key is embedded in the URL fragment (the `#` portion). This is a deliberate security design: fragments are **never sent to any server** in HTTP requests, so the Worker, Cloudflare, and any proxy never sees the key.
+1. Receiver opens the shareable link `floppy.cloud/golden-harbor#key=...` OR navigates to home and types the two-word phrase manually
+2. Phrase is read from `window.location.pathname`. AES key is parsed from `window.location.hash` (never sent to any server — if absent, transport-only encryption mode)
+3. Import AES key from Base64 fragment
+4. Open WebSocket as `receiver` role — Worker notifies sender via `PEER_JOINED`
+5. Create `RTCPeerConnection`, exchange SDP + ICE via signaling
+6. On P2P connection established: show **locked padlock, green** — "Connected — encrypted"
+7. Receiver waits — the sender drives all file transfers
+8. On incoming data channel `METADATA` message: show file name + size ("Receiving: report.pdf — 4.2 MB")
+9. Animated progress bar during receive
+10. On `TRANSFER_COMPLETE`: auto-trigger browser download via `URL.createObjectURL(blob)` + show "✓ Saved"
+11. Receiver stays connected — more files may arrive (repeat 8–10)
+12. On `DISCONNECT` from sender or `ROOM_EXPIRED`: show "Session ended — this link has expired"
 
-The shareable link format is:
+---
+
+## 13. URL Structure & Key Distribution
+
+### Shareable Link Format
 ```
-https://floppy.cloud/receive#code=WOLF-7342&key=<base64-aes-key>
+https://floppy.cloud/golden-harbor#key=<base64-aes-256-key>
 ```
 
-The display-only short code (`WOLF-7342`) is for situations where the user wants to read a code aloud or type it manually — in this case the transfer proceeds **without** client-side encryption (the WebRTC DTLS layer still encrypts in transit, but not at rest). Make this distinction clear in the UI.
+- **Path** (`/golden-harbor`) — the two-word phrase, used as the room identifier by the Worker. Sent to the server as a normal HTTP path segment.
+- **Fragment** (`#key=...`) — the AES-256-GCM encryption key. **Never sent to any server** by the browser. The Worker, Cloudflare edge, and any network proxy are blind to it.
+
+### Routing Logic
+
+Cloudflare Pages serves a single `index.html` for all routes (SPA routing). The frontend JS inspects `window.location.pathname` on load:
+
+| Path pattern | Action |
+|---|---|
+| `/` | Home page — show "Start Transfer" CTA + manual phrase entry field |
+| `/{valid-phrase}` | Room page — determine role (see below), connect to Worker |
+| anything else | 404 page |
+
+### Role Determination on the Room Page
+
+When a user lands on `/{phrase}`:
+1. Check `sessionStorage` for `floppycloud_owned_phrase` matching the current phrase
+2. If match found → **sender role** (they created this room moments ago)
+3. If no match → **receiver role** (they arrived via link or typed the phrase)
+
+`sessionStorage` is tab-scoped and never persists across sessions, so there is no cross-contamination.
+
+### Manual Phrase Entry (receiver without a link)
+
+On the home page `/`, below the "Start Transfer" button, there is a secondary input:
+```
+[ golden · harbor  ▸ Connect ]
+```
+The receiver types the phrase they heard verbally, hits Connect, and is navigated to `/{phrase}`. The AES key will not be present in the fragment in this case — the transfer still proceeds via DTLS-SRTP (WebRTC's built-in encryption), but the additional AES-256-GCM client-side layer is skipped. The UI surfaces this distinction clearly: the padlock badge reads "Encrypted (transport)" rather than "End-to-end encrypted" when no key fragment is present.
+
+### Phrase as Verification Token
+
+Once the P2P connection is established, **both the sender and receiver screens display the phrase in a prominent badge**:
+
+```
+🔒  Golden · Harbor
+```
+
+Either party can read this aloud to the other and confirm it matches before sending anything sensitive. This is the out-of-band verification step — analogous to Signal's safety numbers but human-friendly.
 
 ---
 
@@ -811,25 +925,57 @@ The UI should evoke retro computing nostalgia (floppy disks, early internet) whi
 ### Page Structure
 
 **Home (`/`):**
-- Centered layout, logo + tagline
-- Two large click targets: "Send a file" / "Receive a file"
-- Tagline: *"No login. No storage. Direct."*
-- Small footer: transfer limits, session TTL info
+- Centered layout, logo + tagline: *"No login. No storage. Direct."*
+- **Primary CTA:** Large "Start Transfer" button — clicking creates a room immediately, generates a phrase, and navigates the sender to `/{phrase}`
+- **Secondary input** (below the CTA, lower visual weight): a phrase entry field + "Connect" button for recipients who were given the phrase verbally
+  - Placeholder text: `golden · harbor`
+  - On submit: navigate to `/{phrase}` as receiver
+- Footer: "How it works" — 3 steps, session limit info
 
-**Send (`/send`):**
-- Large drag-and-drop zone (dashed border, animated on hover)
-- File selected state: show file name, size, type
-- After room creation: large code display (`WOLF-7342`) with copy button
-- QR code below the link (use `qrcode` npm package, rendered to canvas)
-- Status bar: "Waiting for receiver…" → "Connected! Transferring…" → "Complete ✓"
-- Animated progress bar during transfer (chunked %)
+**Room Page (`/{phrase}` — used by BOTH sender and receiver):**
 
-**Receive (`/receive`):**
-- If arriving via full link (fragment present): auto-connect, show "Connecting to sender…"
-- If arriving via code only: large text input for manual code entry, "Connect" button
-- Pre-transfer confirmation: show file metadata (name, size, type) before accepting
-- Progress bar during download
-- On complete: large download button
+Role is determined by `sessionStorage` (see Section 13). The page layout is identical for both roles; only the status text and active controls differ.
+
+*State 1 — Waiting (sender: waiting for receiver to join):*
+- Phrase displayed prominently at the top in a styled badge: `Golden · Harbor`
+- Shareable link in a copy-able input field below the phrase
+- QR code alongside the link (renders the full URL including `#key=` fragment)
+- **Unlocked padlock icon, pulsing amber** — "Waiting for receiver…"
+- File drop zone visible but dimmed/disabled — tooltip: "Waiting for receiver to connect"
+- Small "Cancel session" link
+
+*State 1 — Waiting (receiver: connecting to room):*
+- Phrase badge displayed: `Golden · Harbor`  
+- Spinner — "Connecting…"
+- Once WebSocket connects and P2P handshake begins: "Establishing secure connection…"
+
+*State 2 — Live (P2P established, both peers):*
+- Padlock **snaps locked, turns solid green** — CSS transition, slight scale bounce
+- Badge updates: 🔒 `Golden · Harbor` — the phrase is the visual anchor confirming both parties are on the same session
+- Status: "Connected · End-to-end encrypted" (or "Connected · Encrypted (transport)" if no key fragment)
+- **Sender:** file drop zone activates — animated dashed border, full opacity. "Drag & drop a file, or click to select."
+- **Receiver:** "Waiting for sender to drop a file…" — passive waiting state
+- "End Session" button visible to sender (prominent); receiver sees "Leave" (less prominent)
+
+*State 3 — Transferring (sender):*
+- File name + size above the progress bar
+- Animated progress bar (chunked %, left to right fill)
+- Transfer speed displayed ("4.2 MB/s")
+- Padlock stays green throughout
+- On complete: "✓ Sent" flash → drop zone immediately reactivates for next file
+
+*State 3 — Receiving (receiver):*
+- File name + size appear as soon as `METADATA` arrives
+- Same animated progress bar style
+- On complete: browser download triggers automatically via `URL.createObjectURL` + large "✓ Saved" confirmation
+- Returns to passive waiting state for next file
+
+*State 4 — Session Ended:*
+- Padlock becomes grey, unlocked
+- Badge greys out
+- Message: "This session has ended — the link has expired"
+- Phrase is struck through visually to signal it cannot be reused
+- CTA: "Start a new transfer" → home page
 
 ---
 
@@ -839,7 +985,7 @@ The UI should evoke retro computing nostalgia (floppy disks, early internet) whi
 ```
 VITE_API_URL=https://api.floppy.cloud
 VITE_MAX_FILE_SIZE_MB=2048
-VITE_SESSION_TTL_SECONDS=600
+VITE_SESSION_TTL_SECONDS=1800
 ```
 
 ### .dev.vars (Worker secrets — local only, gitignored)
@@ -873,8 +1019,8 @@ pnpm --filter app dev
 
 # 6. Test WebRTC locally
 # Open two browser tabs:
-#   Tab 1: http://localhost:5173/send
-#   Tab 2: http://localhost:5173/receive
+#   Tab 1: http://localhost:5173  → click "Start Transfer" → copy the generated link
+#   Tab 2: paste the generated link (or open http://localhost:5173/golden-harbor as receiver)
 ```
 
 ### package.json (root)
@@ -924,13 +1070,14 @@ wrangler secret put CF_CALLS_APP_SECRET
 | Constraint | Value | Enforced By |
 |---|---|---|
 | Max file size | 2 GB | Client validation + data channel limit |
-| Session TTL | 10 minutes | Durable Object alarm |
+| Session TTL (inactivity) | 30 minutes | Durable Object alarm (safety net only) |
+| Session end (primary) | Sender disconnects | `DISCONNECT` signal + DO cleanup |
 | Max concurrent sessions per IP | 5 | KV rate limiting |
 | WebSocket connections per IP/min | 30 | Worker rate limiting |
 | Room creation per IP/min | 10 | Worker rate limiting |
 | TURN credential requests per IP/min | 20 | Worker rate limiting |
-| Transfer code format | `WORD-NNNN` | Worker utils |
-| Code expiry | Room TTL (10 min) | Durable Object |
+| Phrase format | `adjective-noun` (e.g. `golden-harbor`) — no numbers | Worker utils |
+| Link reuse after disconnect | Not permitted — link is permanently expired | Durable Object |
 | Encryption | AES-256-GCM (client) + DTLS-SRTP (WebRTC) | Browser Web Crypto API |
 
 ---
