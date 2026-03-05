@@ -17,7 +17,11 @@ export class SignalingClient {
         reject(new Error("WebSocket connection failed"));
       this.ws!.onmessage = (e) => {
         const msg: SignalMessage = JSON.parse(e.data);
-        this.handlers.get(msg.type)?.(msg.payload);
+        if (msg.type === "ERROR") {
+          this.handlers.get("ERROR")?.(msg.error ?? msg.payload);
+        } else {
+          this.handlers.get(msg.type)?.(msg.payload);
+        }
         this.handlers.get("*")?.(msg);
       };
       this.ws!.onclose = (e) => {

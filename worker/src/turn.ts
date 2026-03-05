@@ -11,6 +11,10 @@ interface TurnCredentials {
   ttl: number;
 }
 
+interface TurnApiResponse {
+  iceServers: IceServer | IceServer[];
+}
+
 export async function getTurnCredentials(env: Env): Promise<TurnCredentials> {
   const response = await fetch(
     `https://rtc.live.cloudflare.com/v1/turn/keys/${env.CF_CALLS_APP_ID}/credentials/generate`,
@@ -28,13 +32,16 @@ export async function getTurnCredentials(env: Env): Promise<TurnCredentials> {
     throw new Error(`TURN credential fetch failed: ${response.status}`);
   }
 
-  const data = await response.json() as { iceServers: IceServer[] };
+  const data = await response.json() as TurnApiResponse;
+  const turnServers = Array.isArray(data.iceServers)
+    ? data.iceServers
+    : [data.iceServers];
 
   // Always include public STUN as primary (free, no relay)
   return {
     iceServers: [
       { urls: "stun:stun.cloudflare.com:3478" },
-      ...data.iceServers,
+      ...turnServers,
     ],
     ttl: 86400,
   };

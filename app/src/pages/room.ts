@@ -103,46 +103,51 @@ async function initSender(
 
     // Handle signaling events
     signaling.on("PEER_JOINED", async () => {
-      console.log("[sender] PEER_JOINED received");
-      ui.onPeerJoined();
+      try {
+        console.log("[sender] PEER_JOINED received");
+        ui.onPeerJoined();
 
-      // Set up WebRTC
-      const iceConfig = await getIceConfig();
-      console.log("[sender] ICE config:", iceConfig);
-      pc = createPeerConnection(iceConfig, (candidate) => {
-        console.log("[sender] sending ICE candidate");
-        signaling.send("ICE_CANDIDATE", {
-          candidate: candidate.toJSON(),
+        // Set up WebRTC
+        const iceConfig = await getIceConfig();
+        console.log("[sender] ICE config:", iceConfig);
+        pc = createPeerConnection(iceConfig, (candidate) => {
+          console.log("[sender] sending ICE candidate");
+          signaling.send("ICE_CANDIDATE", {
+            candidate: candidate.toJSON(),
+          });
         });
-      });
 
-      pc.oniceconnectionstatechange = () => {
-        console.log("[sender] ICE state:", pc?.iceConnectionState);
-      };
-      pc.onconnectionstatechange = () => {
-        console.log("[sender] connection state:", pc?.connectionState);
-      };
+        pc.oniceconnectionstatechange = () => {
+          console.log("[sender] ICE state:", pc?.iceConnectionState);
+        };
+        pc.onconnectionstatechange = () => {
+          console.log("[sender] connection state:", pc?.connectionState);
+        };
 
-      // Create data channel
-      dataChannel = pc.createDataChannel("fileTransfer", {
-        ordered: true,
-      });
-      dataChannel.binaryType = "arraybuffer";
-      dataChannel.onopen = () => {
-        console.log("[sender] data channel OPEN");
-      };
-      dataChannel.onclose = () => {
-        console.log("[sender] data channel CLOSED");
-      };
-      dataChannel.onerror = (e) => {
-        console.error("[sender] data channel error:", e);
-      };
+        // Create data channel
+        dataChannel = pc.createDataChannel("fileTransfer", {
+          ordered: true,
+        });
+        dataChannel.binaryType = "arraybuffer";
+        dataChannel.onopen = () => {
+          console.log("[sender] data channel OPEN");
+        };
+        dataChannel.onclose = () => {
+          console.log("[sender] data channel CLOSED");
+        };
+        dataChannel.onerror = (e) => {
+          console.error("[sender] data channel error:", e);
+        };
 
-      // Create and send offer
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      console.log("[sender] sending OFFER");
-      signaling.send("OFFER", { sdp: offer.sdp, type: offer.type });
+        // Create and send offer
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        console.log("[sender] sending OFFER");
+        signaling.send("OFFER", { sdp: offer.sdp, type: offer.type });
+      } catch (err) {
+        console.error("[sender] failed to initialize peer connection:", err);
+        showToast("Failed to establish connection. Please retry.", "error");
+      }
     });
 
     signaling.on("ANSWER", async (payload: unknown) => {
@@ -250,68 +255,73 @@ async function initReceiver(
 
     // Handle signaling events
     signaling.on("OFFER", async (payload: unknown) => {
-      console.log("[receiver] OFFER received");
-      const p = payload as { sdp: string; type: RTCSdpType };
+      try {
+        console.log("[receiver] OFFER received");
+        const p = payload as { sdp: string; type: RTCSdpType };
 
-      const iceConfig = await getIceConfig();
-      console.log("[receiver] ICE config:", iceConfig);
-      pc = createPeerConnection(iceConfig, (candidate) => {
-        console.log("[receiver] sending ICE candidate");
-        signaling.send("ICE_CANDIDATE", {
-          candidate: candidate.toJSON(),
+        const iceConfig = await getIceConfig();
+        console.log("[receiver] ICE config:", iceConfig);
+        pc = createPeerConnection(iceConfig, (candidate) => {
+          console.log("[receiver] sending ICE candidate");
+          signaling.send("ICE_CANDIDATE", {
+            candidate: candidate.toJSON(),
+          });
         });
-      });
 
-      pc.oniceconnectionstatechange = () => {
-        console.log("[receiver] ICE state:", pc?.iceConnectionState);
-      };
-      pc.onconnectionstatechange = () => {
-        console.log("[receiver] connection state:", pc?.connectionState);
-      };
-
-      // Listen for data channel
-      pc.ondatachannel = (event) => {
-        console.log("[receiver] data channel received");
-        const dc = event.channel;
-        dc.binaryType = "arraybuffer";
-
-        dc.onopen = () => {
-          console.log("[receiver] data channel OPEN");
-          ui.onConnected();
+        pc.oniceconnectionstatechange = () => {
+          console.log("[receiver] ICE state:", pc?.iceConnectionState);
+        };
+        pc.onconnectionstatechange = () => {
+          console.log("[receiver] connection state:", pc?.connectionState);
         };
 
-        // If we have a crypto key, set up file receiving
-        if (cryptoKey) {
-          const key = cryptoKey;
-          let currentFileName = "";
+        // Listen for data channel
+        pc.ondatachannel = (event) => {
+          console.log("[receiver] data channel received");
+          const dc = event.channel;
+          dc.binaryType = "arraybuffer";
 
-          receiveFile(
-            dc,
-            key,
-            (meta: TransferMetadata) => {
-              currentFileName = meta.fileName;
-              ui.onMetadata(meta);
-            },
-            (pct: number) => {
-              ui.onTransferProgress(pct);
-            }
-          ).then((blob) => {
-            ui.onTransferComplete(blob, currentFileName);
-          });
-        } else {
-          // No key — transport-only encryption, still receive but without extra AES layer
-          // For simplicity, we create a dummy key that just passes through
-          // In a real scenario, we'd skip the encrypt/decrypt steps
-          dc.onmessage = handleRawReceive(ui);
-        }
-      };
+          dc.onopen = () => {
+            console.log("[receiver] data channel OPEN");
+            ui.onConnected();
+          };
 
-      await pc.setRemoteDescription(new RTCSessionDescription(p));
-      console.log("[receiver] remote description set");
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      console.log("[receiver] sending ANSWER");
-      signaling.send("ANSWER", { sdp: answer.sdp, type: answer.type });
+          // If we have a crypto key, set up file receiving
+          if (cryptoKey) {
+            const key = cryptoKey;
+            let currentFileName = "";
+
+            receiveFile(
+              dc,
+              key,
+              (meta: TransferMetadata) => {
+                currentFileName = meta.fileName;
+                ui.onMetadata(meta);
+              },
+              (pct: number) => {
+                ui.onTransferProgress(pct);
+              }
+            ).then((blob) => {
+              ui.onTransferComplete(blob, currentFileName);
+            });
+          } else {
+            // No key — transport-only encryption, still receive but without extra AES layer
+            // For simplicity, we create a dummy key that just passes through
+            // In a real scenario, we'd skip the encrypt/decrypt steps
+            dc.onmessage = handleRawReceive(ui);
+          }
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription(p));
+        console.log("[receiver] remote description set");
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        console.log("[receiver] sending ANSWER");
+        signaling.send("ANSWER", { sdp: answer.sdp, type: answer.type });
+      } catch (err) {
+        console.error("[receiver] failed to handle offer:", err);
+        showToast("Failed to establish connection. Please retry.", "error");
+      }
     });
 
     signaling.on("ICE_CANDIDATE", async (payload: unknown) => {
