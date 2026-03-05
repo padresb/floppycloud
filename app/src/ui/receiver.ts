@@ -4,13 +4,12 @@ import type { TransferMetadata } from "../types";
 
 export interface ReceiverUIOptions {
   phrase: string;
-  hasKey: boolean;
   onLeave: () => void;
 }
 
 export interface ReceiverUI {
   onConnecting: () => void;
-  onConnected: () => void;
+  onConnected: (keyFromUrl: boolean) => void;
   onMetadata: (meta: TransferMetadata) => void;
   onTransferProgress: (pct: number, speed?: string) => void;
   onTransferComplete: (
@@ -26,7 +25,7 @@ export function createReceiverUI(
   container: HTMLElement,
   options: ReceiverUIOptions
 ): ReceiverUI {
-  const { phrase, hasKey, onLeave } = options;
+  const { phrase, onLeave } = options;
   const displayPhrase = formatPhraseForDisplay(phrase);
 
   container.innerHTML = `
@@ -89,15 +88,15 @@ export function createReceiverUI(
       status.textContent = "Establishing secure connection...";
     },
 
-    onConnected() {
+    onConnected(keyFromUrl: boolean) {
       const padlock = container.querySelector("#recv-padlock") as HTMLElement;
       padlock.innerHTML = "&#x1F512;";
       padlock.className = "padlock connected";
 
       const status = container.querySelector("#recv-status") as HTMLElement;
-      status.textContent = hasKey
+      status.textContent = keyFromUrl
         ? "Connected \u00B7 End-to-end encrypted"
-        : "Connected \u00B7 Encrypted (transport)";
+        : "Connected \u00B7 Encrypted";
       status.classList.remove("text-muted");
       status.classList.add("text-accent");
 
@@ -161,8 +160,8 @@ export function createReceiverUI(
       if (empty) empty.remove();
       const item = document.createElement("li");
       item.className = "text-text";
-      const securityLabel = secure ? "file security" : "transport security";
-      item.textContent = `${fileName} ${securityLabel} received in ${formatSeconds(elapsedSeconds)} seconds`;
+      const securityLabel = secure ? "e2e encrypted" : "encrypted";
+      item.textContent = `${fileName} · ${securityLabel} · received in ${formatSeconds(elapsedSeconds)}s`;
       logList.prepend(item);
 
       // Reset for next file after delay

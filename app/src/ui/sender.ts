@@ -249,8 +249,8 @@ export function createSenderUI(
       if (empty) empty.remove();
       const item = document.createElement("li");
       item.className = "text-text";
-      const securityLabel = secure ? "file security" : "transport security";
-      item.textContent = `${fileName} ${securityLabel} transferred in ${formatSeconds(elapsedSeconds)} seconds`;
+      const securityLabel = secure ? "e2e encrypted" : "encrypted";
+      item.textContent = `${fileName} · ${securityLabel} · transferred in ${formatSeconds(elapsedSeconds)}s`;
       logList.prepend(item);
 
       // Reset after brief pause

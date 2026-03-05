@@ -144,6 +144,7 @@ async function initSender(
         dataChannel.binaryType = "arraybuffer";
         dataChannel.onopen = () => {
           console.log("[sender] data channel OPEN");
+          dataChannel!.send(JSON.stringify({ type: "KEY_RELAY", key: keyBase64 }));
           ui.onChannelReady();
         };
         dataChannel.onclose = () => {
@@ -259,7 +260,6 @@ async function initReceiver(
 
   const ui = createReceiverUI(container, {
     phrase,
-    hasKey,
     onLeave: () => {
       cleanup();
       window.location.href = "/";
@@ -317,39 +317,54 @@ async function initReceiver(
 
           dc.onopen = () => {
             console.log("[receiver] data channel OPEN");
-            ui.onConnected();
           };
 
-          // If we have a crypto key, set up file receiving
-          if (cryptoKey) {
-            const key = cryptoKey;
-            let currentFileName = "";
+          // Capture whether key arrived via URL before any async ops
+          const keyFromUrl = !!cryptoKey;
 
-            receiveFile(
-              dc,
-              key,
-              (meta: TransferMetadata) => {
-                currentFileName = meta.fileName;
-                receiveStartTime = Date.now();
-                ui.onMetadata(meta);
-              },
-              (pct: number) => {
-                ui.onTransferProgress(pct);
-              }
-            ).then((blob) => {
-              const elapsedSeconds = receiveStartTime > 0
-                ? (Date.now() - receiveStartTime) / 1000
-                : 0;
-              ui.onTransferComplete(blob, currentFileName, elapsedSeconds, true);
-            });
-          } else {
-            showToast(
-              "Missing file key. Open the full sender link (with #key=...) to decrypt files.",
-              "error"
-            );
-            // Prevent writing encrypted bytes to disk when key is missing.
+          // First message is always KEY_RELAY — sender sends it immediately on open.
+          // If receiver already has a URL key we use that; otherwise we import the relayed key.
+          dc.onmessage = async (event) => {
+            if (typeof event.data === "string") {
+              try {
+                const msg = JSON.parse(event.data) as { type: string; key?: string };
+                if (msg.type === "KEY_RELAY") {
+                  if (!cryptoKey) {
+                    if (!msg.key) {
+                      showToast("Missing encryption key.", "error");
+                      dc.onmessage = () => {};
+                      return;
+                    }
+                    cryptoKey = await importKeyFromBase64(msg.key);
+                  }
+                  const key = cryptoKey;
+                  ui.onConnected(keyFromUrl);
+                  let currentFileName = "";
+                  receiveFile(
+                    dc,
+                    key,
+                    (meta: TransferMetadata) => {
+                      currentFileName = meta.fileName;
+                      receiveStartTime = Date.now();
+                      ui.onMetadata(meta);
+                    },
+                    (pct: number) => {
+                      ui.onTransferProgress(pct);
+                    }
+                  ).then((blob) => {
+                    const elapsedSeconds =
+                      receiveStartTime > 0
+                        ? (Date.now() - receiveStartTime) / 1000
+                        : 0;
+                    ui.onTransferComplete(blob, currentFileName, elapsedSeconds, keyFromUrl);
+                  });
+                  return;
+                }
+              } catch {}
+            }
+            showToast("Unexpected message from sender.", "error");
             dc.onmessage = () => {};
-          }
+          };
         };
 
         await pc.setRemoteDescription(new RTCSessionDescription(p));
