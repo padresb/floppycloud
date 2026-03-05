@@ -311,10 +311,12 @@ async function initReceiver(
               ui.onTransferComplete(blob, currentFileName, elapsedSeconds, true);
             });
           } else {
-            // No key — transport-only encryption, still receive but without extra AES layer
-            // For simplicity, we create a dummy key that just passes through
-            // In a real scenario, we'd skip the encrypt/decrypt steps
-            dc.onmessage = handleRawReceive(ui);
+            showToast(
+              "Missing file key. Open the full sender link (with #key=...) to decrypt files.",
+              "error"
+            );
+            // Prevent writing encrypted bytes to disk when key is missing.
+            dc.onmessage = () => {};
           }
         };
 
@@ -390,43 +392,6 @@ async function initReceiver(
     signaling.disconnect();
     pc = null;
   }
-}
-
-// Handle receiving without AES key (transport-only encryption)
-function handleRawReceive(ui: ReturnType<typeof createReceiverUI>) {
-  let metadata: TransferMetadata | null = null;
-  const chunks: ArrayBuffer[] = [];
-  let received = 0;
-  let startedAt = 0;
-
-  return (e: MessageEvent) => {
-    if (typeof e.data === "string") {
-      const msg = JSON.parse(e.data);
-      if (msg.type === "METADATA") {
-        metadata = msg.payload as TransferMetadata;
-        startedAt = Date.now();
-        ui.onMetadata(metadata);
-      } else if (msg.type === "TRANSFER_COMPLETE" && metadata) {
-        const blob = new Blob(chunks, { type: metadata.fileType });
-        const elapsedSeconds = startedAt > 0
-          ? (Date.now() - startedAt) / 1000
-          : 0;
-        ui.onTransferComplete(blob, metadata.fileName, elapsedSeconds, false);
-        // Reset for next file
-        metadata = null;
-        chunks.length = 0;
-        received = 0;
-        startedAt = 0;
-      }
-    } else if (e.data instanceof ArrayBuffer && metadata) {
-      // No decryption needed — raw chunks
-      chunks.push(e.data);
-      received++;
-      ui.onTransferProgress(
-        Math.round((received / metadata.totalChunks) * 100)
-      );
-    }
-  };
 }
 
 function formatFileSize(bytes: number): string {

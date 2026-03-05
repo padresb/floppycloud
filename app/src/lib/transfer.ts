@@ -57,31 +57,44 @@ export async function receiveFile(
     const chunks: ArrayBuffer[] = [];
     let received = 0;
     let iv: Uint8Array;
+    let processing = Promise.resolve();
 
-    dataChannel.onmessage = async (e) => {
-      if (typeof e.data === "string") {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "METADATA") {
-          metadata = msg.payload as TransferMetadata;
-          iv = Uint8Array.from(atob(metadata.iv), (c) => c.charCodeAt(0));
-          onMetadata(metadata);
-        } else if (msg.type === "TRANSFER_COMPLETE" && metadata) {
-          const blob = new Blob(chunks, { type: metadata.fileType });
-          resolve(blob);
-        }
-      } else if (e.data instanceof ArrayBuffer && metadata) {
-        const decrypted = await decryptChunk(
-          new Uint8Array(e.data),
-          cryptoKey,
-          iv!
-        );
-        chunks.push(decrypted.buffer as ArrayBuffer);
-        received++;
-        onProgress(Math.round((received / metadata.totalChunks) * 100));
-      }
+    dataChannel.onmessage = (e) => {
+      // Ensure message handling (especially async decrypt) stays in strict wire order.
+      processing = processing
+        .then(async () => {
+          if (typeof e.data === "string") {
+            const msg = JSON.parse(e.data);
+            if (msg.type === "METADATA") {
+              metadata = msg.payload as TransferMetadata;
+              iv = Uint8Array.from(atob(metadata.iv), (c) => c.charCodeAt(0));
+              onMetadata(metadata);
+            } else if (msg.type === "TRANSFER_COMPLETE" && metadata) {
+              const blob = new Blob(chunks, { type: metadata.fileType });
+              resolve(blob);
+            }
+          } else if (e.data instanceof ArrayBuffer && metadata) {
+            const decrypted = await decryptChunk(
+              new Uint8Array(e.data),
+              cryptoKey,
+              iv!
+            );
+            chunks.push(decrypted.buffer as ArrayBuffer);
+            received++;
+            onProgress(Math.round((received / metadata.totalChunks) * 100));
+          }
+        })
+        .catch((err) => {
+          reject(err);
+        });
     };
 
     dataChannel.onerror = (e) => reject(e);
+    dataChannel.onclose = () => {
+      if (metadata && received < metadata.totalChunks) {
+        reject(new Error("Data channel closed before transfer completed."));
+      }
+    };
   });
 }
 
