@@ -1,0 +1,222 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Base ---- */
+html, body {
+  font-family: "IBM Plex Mono", monospace;
+  background: #0D0D0D;
+  color: #E8E8E8;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Scanline overlay ---- */
+#app::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.04) 2px,
+    rgba(0, 0, 0, 0.04) 4px
+  );
+}
+
+/* ---- Progress bar ---- */
+.progress-track {
+  background: #1A1A1A;
+  border: 1px solid #333;
+  border-radius: 2px;
+  overflow: hidden;
+  height: 24px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #00FF87;
+  box-shadow: 0 0 12px rgba(0, 255, 135, 0.4);
+  transition: width 0.15s linear;
+  width: 0%;
+}
+
+.progress-fill.complete {
+  background: #00FF87;
+  box-shadow: 0 0 20px rgba(0, 255, 135, 0.6);
+}
+
+/* ---- Padlock transitions ---- */
+.padlock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  transition: color 0.4s ease, transform 0.3s ease, filter 0.4s ease;
+}
+
+.padlock.waiting {
+  color: #FF6B35;
+  animation: padlock-pulse 2s ease-in-out infinite;
+}
+
+.padlock.connected {
+  color: #00FF87;
+  filter: drop-shadow(0 0 8px rgba(0, 255, 135, 0.5));
+  animation: padlock-snap 0.4s ease-out;
+}
+
+.padlock.ended {
+  color: #555;
+  filter: none;
+}
+
+@keyframes padlock-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes padlock-snap {
+  0% { transform: scale(1.3); }
+  50% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+/* ---- Drop zone ---- */
+.drop-zone {
+  border: 2px dashed #555;
+  border-radius: 8px;
+  padding: 3rem 2rem;
+  text-align: center;
+  transition: border-color 0.2s, box-shadow 0.2s, opacity 0.3s;
+  cursor: pointer;
+}
+
+.drop-zone.active {
+  border-color: #00FF87;
+  opacity: 1;
+}
+
+.drop-zone.active:hover,
+.drop-zone.dragover {
+  border-color: #00FF87;
+  box-shadow: 0 0 20px rgba(0, 255, 135, 0.15), inset 0 0 20px rgba(0, 255, 135, 0.05);
+}
+
+.drop-zone.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ---- Toast notifications ---- */
+.toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toast {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.85rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #1A1A1A;
+  color: #E8E8E8;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  animation: toast-in 0.3s ease-out;
+  max-width: 360px;
+}
+
+.toast.toast-error {
+  border-color: #FF6B35;
+  color: #FF6B35;
+}
+
+.toast.toast-success {
+  border-color: #00FF87;
+  color: #00FF87;
+}
+
+.toast.toast-info {
+  border-color: #555;
+}
+
+.toast.toast-out {
+  animation: toast-out 0.3s ease-in forwards;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(12px); }
+}
+
+/* ---- QR Code ---- */
+.qr-canvas {
+  border-radius: 4px;
+  image-rendering: pixelated;
+}
+
+/* ---- Utility ---- */
+.font-heading {
+  font-family: "Share Tech Mono", monospace;
+}
+
+.glow-green {
+  text-shadow: 0 0 10px rgba(0, 255, 135, 0.5);
+}
+
+.btn-primary {
+  background: #00FF87;
+  color: #0D0D0D;
+  font-family: "Share Tech Mono", monospace;
+  font-weight: 600;
+  padding: 0.85rem 2.5rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: background 0.2s, box-shadow 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.btn-primary:hover {
+  background: #00CC6A;
+  box-shadow: 0 0 20px rgba(0, 255, 135, 0.3);
+}
+
+.btn-primary:disabled {
+  background: #333;
+  color: #666;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.link-muted {
+  color: #555;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: color 0.2s;
+  background: none;
+  border: none;
+  font-family: inherit;
+}
+
+.link-muted:hover {
+  color: #888;
+}

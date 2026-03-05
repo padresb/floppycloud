@@ -1,0 +1,15 @@
+{
+  "name": "worker",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0",
+    "typescript": "^5.3.0",
+    "@cloudflare/workers-types": "^4.0.0"
+  }
+}
