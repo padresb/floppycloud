@@ -189,14 +189,13 @@ export function createSenderUI(
     onFileSelected(file);
   }
 
-  // Progress bar
   const progressArea = container.querySelector(
     "#sender-progress-area"
   ) as HTMLDivElement;
   const progressBarContainer = container.querySelector(
     "#sender-progress-bar"
   ) as HTMLDivElement;
-  const progressBar = createProgressBar();
+  const progressBar = createProgressBar("SENDING");
   progressBarContainer.appendChild(progressBar);
 
   function enableFilePicker() {

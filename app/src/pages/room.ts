@@ -67,18 +67,25 @@ async function initSender(
           if (fileInfo)
             fileInfo.textContent = `${file.name} \u2014 ${formatFileSize(file.size)}`;
 
+          let lastProgressTime = 0;
+
           await sendFile(file, dataChannel, cryptoKey, (pct) => {
-            const elapsed = (Date.now() - transferStartTime) / 1000;
+            const now = Date.now();
             const bytesTransferred = (pct / 100) * file.size;
-            const speed =
-              elapsed > 0.5
-                ? formatSpeed(
-                    (bytesTransferred - lastProgressBytes) /
-                      Math.max(elapsed, 0.1)
-                  )
-                : undefined;
-            lastProgressBytes = bytesTransferred;
-            ui.onTransferProgress(pct, speed);
+            let speedStr = undefined;
+
+            // Only recalculate speed every 500ms for stable readouts
+            if (lastProgressTime === 0 || now - lastProgressTime > 500) {
+              if (lastProgressTime !== 0) {
+                const elapsed = (now - lastProgressTime) / 1000;
+                const speedBytes = (bytesTransferred - lastProgressBytes) / elapsed;
+                speedStr = formatSpeed(speedBytes);
+              }
+              lastProgressBytes = bytesTransferred;
+              lastProgressTime = now;
+            }
+
+            ui.onTransferProgress(pct, speedStr);
           });
 
           signaling.send("TRANSFER_COMPLETE");
@@ -184,7 +191,7 @@ async function initSender(
             const msg = JSON.parse(e.data as string);
             if (msg.type === "CHAT") ui.onChatMessage(msg.text as string);
             else if (msg.type === "TYPING") ui.onTyping();
-          } catch {}
+          } catch { }
         };
 
         // Create and send offer
@@ -362,7 +369,7 @@ async function initReceiver(
                 const msg = JSON.parse(e.data as string);
                 if (msg.type === "CHAT") ui.onChatMessage(msg.text as string);
                 else if (msg.type === "TYPING") ui.onTyping();
-              } catch {}
+              } catch { }
             };
             return;
           }
@@ -387,7 +394,7 @@ async function initReceiver(
                   if (!cryptoKey) {
                     if (!msg.key) {
                       showToast("Missing encryption key.", "error");
-                      dc.onmessage = () => {};
+                      dc.onmessage = () => { };
                       return;
                     }
                     cryptoKey = await importKeyFromBase64(msg.key);
@@ -395,16 +402,36 @@ async function initReceiver(
                   const key = cryptoKey;
                   ui.onConnected(keyFromUrl);
                   let currentFileName = "";
+                  let currentFileSize = 0;
+                  let lastProgressTime = 0;
+                  let lastProgressBytes = 0;
+
                   receiveFile(
                     dc,
                     key,
                     (meta: TransferMetadata) => {
                       currentFileName = meta.fileName;
+                      currentFileSize = meta.fileSize;
                       receiveStartTime = Date.now();
                       ui.onMetadata(meta);
                     },
                     (pct: number) => {
-                      ui.onTransferProgress(pct);
+                      const now = Date.now();
+                      const bytesTransferred = (pct / 100) * currentFileSize;
+                      let speedStr = undefined;
+
+                      // Only recalculate speed every 500ms for stable readouts
+                      if (lastProgressTime === 0 || now - lastProgressTime > 500) {
+                        if (lastProgressTime !== 0) {
+                          const elapsed = (now - lastProgressTime) / 1000;
+                          const speedBytes = (bytesTransferred - lastProgressBytes) / Math.max(elapsed, 0.001);
+                          speedStr = formatSpeed(speedBytes);
+                        }
+                        lastProgressBytes = bytesTransferred;
+                        lastProgressTime = now;
+                      }
+
+                      ui.onTransferProgress(pct, speedStr);
                     }
                   ).then((blob) => {
                     const elapsedSeconds =
@@ -415,10 +442,10 @@ async function initReceiver(
                   });
                   return;
                 }
-              } catch {}
+              } catch { }
             }
             showToast("Unexpected message from sender.", "error");
-            dc.onmessage = () => {};
+            dc.onmessage = () => { };
           };
         };
 

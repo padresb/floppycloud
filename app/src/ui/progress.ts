@@ -1,23 +1,24 @@
-export function createProgressBar(): HTMLDivElement {
+export function createProgressBar(mode: "SENDING" | "RECEIVING" = "SENDING"): HTMLDivElement {
   const wrapper = document.createElement("div");
-  wrapper.className = "w-full";
+  wrapper.className = "w-full flex items-center gap-6 py-4";
 
-  const info = document.createElement("div");
-  info.className = "flex justify-between text-sm mb-1 font-mono";
-  info.innerHTML = `
-    <span class="progress-pct text-accent">0%</span>
-    <span class="progress-speed text-muted"></span>
+  wrapper.innerHTML = `
+    <div class="cyber-circle">
+      <div class="cyber-circle-inner text-accent font-heading text-xl progress-pct glow-green">0%</div>
+      <div class="cyber-circle-ring"></div>
+    </div>
+    <div class="flex-1 flex flex-col justify-center">
+      <div class="flex justify-between text-xs font-mono text-accent mb-2 px-1 tracking-widest glow-green">
+        <span class="progress-label">${mode}...</span>
+        <span class="progress-speed w-[100px] text-right"></span>
+      </div>
+      <div class="cyber-track-wrapper">
+        <div class="cyber-bar-track">
+          <div class="progress-fill" style="width: 0%"></div>
+        </div>
+      </div>
+    </div>
   `;
-
-  const track = document.createElement("div");
-  track.className = "progress-track";
-
-  const fill = document.createElement("div");
-  fill.className = "progress-fill";
-  track.appendChild(fill);
-
-  wrapper.appendChild(info);
-  wrapper.appendChild(track);
 
   return wrapper;
 }
@@ -32,8 +33,23 @@ export function updateProgress(
   const spd = element.querySelector(".progress-speed") as HTMLSpanElement;
 
   if (fill) fill.style.width = `${percent}%`;
-  if (pct) pct.textContent = `${percent}%`;
-  if (spd && speed) spd.textContent = speed;
+
+  if (pct) {
+    const text = `${percent}%`;
+    if (pct.textContent !== text) pct.textContent = text;
+  }
+
+  if (spd && speed) {
+    const now = Date.now();
+    const lastUpdate = parseInt(spd.dataset.lastUpdate || "0", 10);
+
+    if (percent === 100 || now - lastUpdate > 500) {
+      if (spd.textContent !== speed) {
+        spd.textContent = speed;
+        spd.dataset.lastUpdate = now.toString();
+      }
+    }
+  }
 
   if (percent >= 100 && fill) {
     fill.classList.add("complete");

@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"pnpm --filter worker dev\" \"pnpm --filter app dev\"",
+    "deployments": "pnpm --filter worker exec wrangler pages deployment list --project-name floppycloud --json | jq '.[:3]'",
     "dev:app": "pnpm --filter app dev",
     "worker:deploy": "pnpm --filter worker deploy",
     "build": "pnpm --filter app build && pnpm --filter worker build",

@@ -88,7 +88,7 @@ export function createReceiverUI(
   const progressBarContainer = container.querySelector(
     "#recv-progress-bar"
   ) as HTMLDivElement;
-  const progressBar = createProgressBar();
+  const progressBar = createProgressBar("RECEIVING");
   progressBarContainer.appendChild(progressBar);
 
   return {
@@ -149,7 +149,7 @@ export function createReceiverUI(
     ) {
       updateProgress(progressBar, 100);
 
-      // Auto-download
+      // Auto-download setup
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -157,7 +157,11 @@ export function createReceiverUI(
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+
+      // Delay blob revocation so the browser has time to register the download attribute
+      // before it starts streaming to disk, otherwise it falls back to a blob UUID filename.
+      // 5 seconds gives Chrome enough time to flush large files securely.
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
 
       const savedMsg = container.querySelector(
         "#recv-saved-msg"
@@ -167,9 +171,11 @@ export function createReceiverUI(
       const logList = container.querySelector("#recv-log-list") as HTMLUListElement;
       const empty = container.querySelector("#recv-log-empty");
       if (empty) empty.remove();
+
       const item = document.createElement("li");
       item.className = "text-text";
       const securityLabel = secure ? "e2e encrypted" : "encrypted";
+
       item.textContent = `${fileName} · ${securityLabel} · transferred in ${formatSeconds(elapsedSeconds)}s`;
       logList.prepend(item);
 
