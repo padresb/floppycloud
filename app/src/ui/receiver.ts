@@ -1,6 +1,7 @@
 import { formatPhraseForDisplay } from "../lib/phrase";
 import { createProgressBar, updateProgress, resetProgress } from "./progress";
 import type { TransferMetadata } from "../types";
+import { chatPanelHTML, initChat, type ChatPanel } from "./chat";
 
 export interface ReceiverUIOptions {
   phrase: string;
@@ -19,6 +20,9 @@ export interface ReceiverUI {
     secure: boolean
   ) => void;
   onSessionEnded: () => void;
+  onChatReady: (onSend: (text: string) => void, onTyping: () => void) => void;
+  onChatMessage: (text: string) => void;
+  onTyping: () => void;
 }
 
 export function createReceiverUI(
@@ -60,9 +64,12 @@ export function createReceiverUI(
       <div class="bg-surface rounded-lg border border-gray-800 p-4 mb-6">
         <p class="text-xs uppercase tracking-widest text-accent mb-2">Transfer Log</p>
         <ul id="recv-log-list" class="text-sm text-muted space-y-1">
-          <li id="recv-log-empty">No files received yet.</li>
+          <li id="recv-log-empty">No files transferred yet.</li>
         </ul>
       </div>
+
+      <!-- Chat -->
+      ${chatPanelHTML()}
 
       <!-- Actions -->
       <div class="text-center">
@@ -75,6 +82,8 @@ export function createReceiverUI(
     "#recv-leave-btn"
   ) as HTMLButtonElement;
   leaveBtn.addEventListener("click", onLeave);
+
+  const chatPanel: ChatPanel = initChat(container);
 
   const progressBarContainer = container.querySelector(
     "#recv-progress-bar"
@@ -161,7 +170,7 @@ export function createReceiverUI(
       const item = document.createElement("li");
       item.className = "text-text";
       const securityLabel = secure ? "e2e encrypted" : "encrypted";
-      item.textContent = `${fileName} · ${securityLabel} · received in ${formatSeconds(elapsedSeconds)}s`;
+      item.textContent = `${fileName} · ${securityLabel} · transferred in ${formatSeconds(elapsedSeconds)}s`;
       logList.prepend(item);
 
       // Reset for next file after delay
@@ -202,11 +211,25 @@ export function createReceiverUI(
         if (el) el.classList.add("hidden");
       }
 
+      chatPanel.disable();
+
       leaveBtn.textContent = "Start a new transfer";
       leaveBtn.className = "btn-primary mt-6";
       leaveBtn.onclick = () => {
         window.location.href = "/";
       };
+    },
+
+    onChatReady(onSend: (text: string) => void, onTyping: () => void) {
+      chatPanel.enable(onSend, onTyping);
+    },
+
+    onChatMessage(text: string) {
+      chatPanel.appendMessage("them", text);
+    },
+
+    onTyping() {
+      chatPanel.showTyping();
     },
   };
 }

@@ -28,6 +28,7 @@ async function initSender(
   const signaling = new SignalingClient();
   let pc: RTCPeerConnection | null = null;
   let dataChannel: RTCDataChannel | null = null;
+  let chatChannel: RTCDataChannel | null = null;
   let cryptoKey: CryptoKey;
   let transferStartTime = 0;
   let lastProgressBytes = 0;
@@ -169,6 +170,23 @@ async function initSender(
           console.error("[sender] data channel error:", e);
         };
 
+        // Create chat channel
+        chatChannel = pc.createDataChannel("chat", { ordered: true });
+        chatChannel.onopen = () => {
+          console.log("[sender] chat channel OPEN");
+          ui.onChatReady(
+            (text) => chatChannel?.send(JSON.stringify({ type: "CHAT", text })),
+            () => chatChannel?.send(JSON.stringify({ type: "TYPING" }))
+          );
+        };
+        chatChannel.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data as string);
+            if (msg.type === "CHAT") ui.onChatMessage(msg.text as string);
+            else if (msg.type === "TYPING") ui.onTyping();
+          } catch {}
+        };
+
         // Create and send offer
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -230,11 +248,13 @@ async function initSender(
     });
 
     function cleanup() {
+      chatChannel?.close();
       dataChannel?.close();
       pc?.close();
       signaling.disconnect();
       pc = null;
       dataChannel = null;
+      chatChannel = null;
     }
   } catch (err) {
     showToast("Failed to set up transfer. Try again.", "error");
@@ -326,8 +346,28 @@ async function initReceiver(
 
         // Listen for data channel
         pc.ondatachannel = (event) => {
-          console.log("[receiver] data channel received");
           const dc = event.channel;
+
+          // Chat channel — handle separately from file transfer
+          if (dc.label === "chat") {
+            dc.onopen = () => {
+              console.log("[receiver] chat channel OPEN");
+              ui.onChatReady(
+                (text) => dc.send(JSON.stringify({ type: "CHAT", text })),
+                () => dc.send(JSON.stringify({ type: "TYPING" }))
+              );
+            };
+            dc.onmessage = (e) => {
+              try {
+                const msg = JSON.parse(e.data as string);
+                if (msg.type === "CHAT") ui.onChatMessage(msg.text as string);
+                else if (msg.type === "TYPING") ui.onTyping();
+              } catch {}
+            };
+            return;
+          }
+
+          console.log("[receiver] data channel received");
           dc.binaryType = "arraybuffer";
 
           dc.onopen = () => {

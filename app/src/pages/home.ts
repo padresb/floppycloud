@@ -33,7 +33,7 @@ export function renderHomePage(container: HTMLElement): void {
 
         <!-- Primary CTA -->
         <button id="home-start-btn" class="btn-primary w-full mb-8">
-          Start Transfer
+          Create Transfer Session
         </button>
 
         <!-- Divider -->
@@ -63,7 +63,7 @@ export function renderHomePage(container: HTMLElement): void {
           <ol class="space-y-3 text-sm text-muted">
             <li class="flex gap-3">
               <span class="text-accent font-heading">1.</span>
-              <span>Click <strong class="text-text">Start Transfer</strong> to get a unique phrase and link</span>
+              <span>Click <strong class="text-text">Create Transfer Session</strong> to get a unique phrase and link</span>
             </li>
             <li class="flex gap-3">
               <span class="text-accent font-heading">2.</span>
@@ -83,7 +83,7 @@ export function renderHomePage(container: HTMLElement): void {
     </div>
   `;
 
-  // Start Transfer button
+  // Create Transfer Session button
   const startBtn = container.querySelector(
     "#home-start-btn"
   ) as HTMLButtonElement;
@@ -101,7 +101,7 @@ export function renderHomePage(container: HTMLElement): void {
           showToast("Failed to create room. Try again.", "error");
         }
         startBtn.disabled = false;
-        startBtn.textContent = "Start Transfer";
+        startBtn.textContent = "Create Transfer Session";
         return;
       }
 
@@ -114,7 +114,7 @@ export function renderHomePage(container: HTMLElement): void {
     } catch {
       showToast("Network error. Check your connection.", "error");
       startBtn.disabled = false;
-      startBtn.textContent = "Start Transfer";
+      startBtn.textContent = "Create Transfer Session";
     }
   });
 

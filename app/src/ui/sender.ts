@@ -2,6 +2,7 @@ import QRCode from "qrcode";
 import { formatPhraseForDisplay } from "../lib/phrase";
 import { createProgressBar, updateProgress, resetProgress } from "./progress";
 import { showToast } from "./toast";
+import { chatPanelHTML, initChat, type ChatPanel } from "./chat";
 
 export interface SenderUIOptions {
   phrase: string;
@@ -22,6 +23,9 @@ export interface SenderUI {
     secure: boolean
   ) => void;
   onSessionEnded: () => void;
+  onChatReady: (onSend: (text: string) => void, onTyping: () => void) => void;
+  onChatMessage: (text: string) => void;
+  onTyping: () => void;
 }
 
 export function createSenderUI(
@@ -109,6 +113,9 @@ export function createSenderUI(
         </ul>
       </div>
 
+      <!-- Chat -->
+      ${chatPanelHTML()}
+
       <!-- Hidden file input -->
       <input type="file" id="sender-file-input" class="hidden" />
 
@@ -141,6 +148,9 @@ export function createSenderUI(
     });
   });
   linkInput.addEventListener("click", () => linkInput.select());
+
+  // Chat panel
+  const chatPanel: ChatPanel = initChat(container);
 
   // Copy phrase button
   const copyPhraseBtn = container.querySelector(
@@ -336,11 +346,25 @@ export function createSenderUI(
       ) as HTMLElement;
       shareSection.classList.add("hidden");
 
+      chatPanel.disable();
+
       disconnectBtn.textContent = "Start a new transfer";
       disconnectBtn.className = "btn-primary mt-6";
       disconnectBtn.onclick = () => {
         window.location.href = "/";
       };
+    },
+
+    onChatReady(onSend: (text: string) => void, onTyping: () => void) {
+      chatPanel.enable(onSend, onTyping);
+    },
+
+    onChatMessage(text: string) {
+      chatPanel.appendMessage("them", text);
+    },
+
+    onTyping() {
+      chatPanel.showTyping();
     },
   };
 }
