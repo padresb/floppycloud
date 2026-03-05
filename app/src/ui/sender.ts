@@ -13,6 +13,7 @@ export interface SenderUIOptions {
 
 export interface SenderUI {
   onPeerJoined: () => void;
+  onChannelReady: () => void;
   onTransferProgress: (pct: number, speed?: string) => void;
   onTransferComplete: (
     fileName: string,
@@ -151,9 +152,63 @@ export function createSenderUI(
   const progressBar = createProgressBar();
   progressBarContainer.appendChild(progressBar);
 
+  function enableFilePicker() {
+    dropZone.classList.remove("disabled");
+    dropZone.classList.add("active");
+    dropZone.innerHTML = `
+      <p class="text-text text-sm mb-1">Drag & drop a file, or click to select</p>
+      <p class="text-muted text-xs">Up to 2 GB</p>
+    `;
+
+    // Drop zone events
+    dropZone.addEventListener("click", () => fileInput.click());
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.classList.remove("dragover");
+    });
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("dragover");
+      const file = e.dataTransfer?.files[0];
+      if (file) handleFile(file);
+    });
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (file) handleFile(file);
+      fileInput.value = "";
+    });
+  }
+
   return {
     onPeerJoined() {
-      // Phase 2: connected
+      const status = container.querySelector(
+        "#sender-status"
+      ) as HTMLElement;
+      status.textContent = "Peer joined \u00B7 establishing secure channel...";
+      status.classList.remove("text-muted");
+      status.classList.add("text-accent");
+
+      // Hide share section while secure channel is being established.
+      const shareSection = container.querySelector(
+        "#sender-share"
+      ) as HTMLElement;
+      shareSection.classList.add("hidden");
+
+      dropZone.classList.add("disabled");
+      dropZone.classList.remove("active");
+      dropZone.innerHTML = `
+        <p class="text-muted text-sm">Peer joined. Establishing secure channel...</p>
+      `;
+
+      disconnectBtn.textContent = "End Session";
+      disconnectBtn.classList.remove("link-muted");
+      disconnectBtn.className =
+        "mt-4 bg-surface border border-gray-700 rounded px-6 py-2 text-sm text-warning hover:border-warning transition-colors font-mono cursor-pointer";
+    },
+    onChannelReady() {
       const padlock = container.querySelector(
         "#sender-padlock"
       ) as HTMLElement;
@@ -169,44 +224,7 @@ export function createSenderUI(
       status.classList.remove("text-muted");
       status.classList.add("text-accent");
 
-      // Hide share section, show drop zone
-      const shareSection = container.querySelector(
-        "#sender-share"
-      ) as HTMLElement;
-      shareSection.classList.add("hidden");
-
-      dropZone.classList.remove("disabled");
-      dropZone.classList.add("active");
-      dropZone.innerHTML = `
-        <p class="text-text text-sm mb-1">Drag & drop a file, or click to select</p>
-        <p class="text-muted text-xs">Up to 2 GB</p>
-      `;
-
-      // Drop zone events
-      dropZone.addEventListener("click", () => fileInput.click());
-      dropZone.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        dropZone.classList.add("dragover");
-      });
-      dropZone.addEventListener("dragleave", () => {
-        dropZone.classList.remove("dragover");
-      });
-      dropZone.addEventListener("drop", (e) => {
-        e.preventDefault();
-        dropZone.classList.remove("dragover");
-        const file = e.dataTransfer?.files[0];
-        if (file) handleFile(file);
-      });
-      fileInput.addEventListener("change", () => {
-        const file = fileInput.files?.[0];
-        if (file) handleFile(file);
-        fileInput.value = "";
-      });
-
-      disconnectBtn.textContent = "End Session";
-      disconnectBtn.classList.remove("link-muted");
-      disconnectBtn.className =
-        "mt-4 bg-surface border border-gray-700 rounded px-6 py-2 text-sm text-warning hover:border-warning transition-colors font-mono cursor-pointer";
+      enableFilePicker();
     },
 
     onTransferProgress(pct: number, speed?: string) {

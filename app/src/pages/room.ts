@@ -31,6 +31,8 @@ async function initSender(
   let cryptoKey: CryptoKey;
   let transferStartTime = 0;
   let lastProgressBytes = 0;
+  const pendingSenderCandidates: RTCIceCandidateInit[] = [];
+  let senderConnectFailedShown = false;
 
   try {
     // Generate crypto key
@@ -123,6 +125,16 @@ async function initSender(
         };
         pc.onconnectionstatechange = () => {
           console.log("[sender] connection state:", pc?.connectionState);
+          if (
+            !senderConnectFailedShown &&
+            (pc?.connectionState === "failed" || pc?.connectionState === "disconnected")
+          ) {
+            senderConnectFailedShown = true;
+            showToast(
+              "Could not establish secure channel. Ask receiver to reconnect.",
+              "error"
+            );
+          }
         };
 
         // Create data channel
@@ -132,6 +144,7 @@ async function initSender(
         dataChannel.binaryType = "arraybuffer";
         dataChannel.onopen = () => {
           console.log("[sender] data channel OPEN");
+          ui.onChannelReady();
         };
         dataChannel.onclose = () => {
           console.log("[sender] data channel CLOSED");
@@ -157,6 +170,9 @@ async function initSender(
       if (pc) {
         await pc.setRemoteDescription(new RTCSessionDescription(p));
         console.log("[sender] remote description set");
+        for (const candidate of pendingSenderCandidates.splice(0)) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
       }
     });
 
@@ -164,7 +180,11 @@ async function initSender(
       console.log("[sender] ICE_CANDIDATE received");
       const p = payload as { candidate: RTCIceCandidateInit };
       if (pc) {
-        await pc.addIceCandidate(new RTCIceCandidate(p.candidate));
+        if (pc.remoteDescription) {
+          await pc.addIceCandidate(new RTCIceCandidate(p.candidate));
+        } else {
+          pendingSenderCandidates.push(p.candidate);
+        }
       }
     });
 
@@ -221,6 +241,8 @@ async function initReceiver(
   let pc: RTCPeerConnection | null = null;
   let cryptoKey: CryptoKey | null = null;
   let receiveStartTime = 0;
+  const pendingReceiverCandidates: RTCIceCandidateInit[] = [];
+  let receiverConnectFailedShown = false;
 
   // Parse key from URL hash
   const hash = window.location.hash;
@@ -275,6 +297,16 @@ async function initReceiver(
         };
         pc.onconnectionstatechange = () => {
           console.log("[receiver] connection state:", pc?.connectionState);
+          if (
+            !receiverConnectFailedShown &&
+            (pc?.connectionState === "failed" || pc?.connectionState === "disconnected")
+          ) {
+            receiverConnectFailedShown = true;
+            showToast(
+              "Could not establish secure channel. Reopen the sender link and try again.",
+              "error"
+            );
+          }
         };
 
         // Listen for data channel
@@ -322,6 +354,9 @@ async function initReceiver(
 
         await pc.setRemoteDescription(new RTCSessionDescription(p));
         console.log("[receiver] remote description set");
+        for (const candidate of pendingReceiverCandidates.splice(0)) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         console.log("[receiver] sending ANSWER");
@@ -335,7 +370,11 @@ async function initReceiver(
     signaling.on("ICE_CANDIDATE", async (payload: unknown) => {
       const p = payload as { candidate: RTCIceCandidateInit };
       if (pc) {
-        await pc.addIceCandidate(new RTCIceCandidate(p.candidate));
+        if (pc.remoteDescription) {
+          await pc.addIceCandidate(new RTCIceCandidate(p.candidate));
+        } else {
+          pendingReceiverCandidates.push(p.candidate);
+        }
       }
     });
 
