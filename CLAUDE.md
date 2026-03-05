@@ -12,7 +12,7 @@ Peer-to-peer WebRTC file transfer app. No login, no server storage. Cloudflare-n
 ```bash
 pnpm install                    # Install all dependencies
 pnpm dev                        # Run both worker and frontend concurrently
-pnpm --filter app dev           # Frontend only (localhost:5173)
+pnpm dev:app                    # Frontend only (localhost:5173)
 pnpm --filter worker dev        # Worker only (localhost:8787)
 pnpm build                      # Build both packages
 pnpm typecheck                  # TypeScript check across all packages

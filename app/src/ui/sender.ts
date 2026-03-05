@@ -45,23 +45,47 @@ export function createSenderUI(
       </div>
 
       <!-- Share section -->
-      <div id="sender-share" class="bg-surface rounded-lg border border-gray-800 p-6 mb-6">
-        <p class="text-sm text-muted mb-3">Share this link:</p>
-        <div class="flex gap-2 mb-4">
-          <input
-            type="text"
-            readonly
-            value="${shareableLink}"
-            class="flex-1 bg-bg border border-gray-700 rounded px-3 py-2 text-sm font-mono text-text focus:outline-none focus:border-accent"
-            id="sender-link-input"
-          />
-          <button
-            id="sender-copy-btn"
-            class="bg-surface border border-gray-700 rounded px-4 py-2 text-sm text-text hover:border-accent transition-colors"
-          >Copy</button>
+      <div id="sender-share" class="mb-6">
+        <!-- Option 1: Share the link -->
+        <div class="bg-surface rounded-lg border border-gray-800 p-5 mb-3">
+          <p class="text-xs uppercase tracking-widest text-accent mb-1">Option 1 &mdash; Share the link</p>
+          <p class="text-xs text-muted mb-3">Receiver opens the link &mdash; encryption key included</p>
+          <div class="flex gap-2 mb-4">
+            <input
+              type="text"
+              readonly
+              value="${shareableLink}"
+              class="flex-1 bg-bg border border-gray-700 rounded px-3 py-2 text-sm font-mono text-text focus:outline-none focus:border-accent"
+              id="sender-link-input"
+            />
+            <button
+              id="sender-copy-btn"
+              class="bg-surface border border-gray-700 rounded px-4 py-2 text-sm text-text hover:border-accent transition-colors"
+            >Copy</button>
+          </div>
+          <div class="flex justify-center">
+            <canvas id="sender-qr" class="qr-canvas"></canvas>
+          </div>
         </div>
-        <div class="flex justify-center">
-          <canvas id="sender-qr" class="qr-canvas"></canvas>
+
+        <!-- Divider -->
+        <div class="flex items-center gap-3 my-4">
+          <div class="flex-1 h-px bg-gray-800"></div>
+          <span class="text-xs text-muted">or</span>
+          <div class="flex-1 h-px bg-gray-800"></div>
+        </div>
+
+        <!-- Option 2: Share the phrase -->
+        <div class="bg-surface rounded-lg border border-gray-800 p-5">
+          <p class="text-xs uppercase tracking-widest text-accent mb-1">Option 2 &mdash; Share the phrase</p>
+          <p class="text-xs text-muted mb-3">Receiver visits floppy.cloud and types the phrase</p>
+          <div class="flex items-center gap-2">
+            <span class="flex-1 bg-bg border border-gray-700 rounded px-3 py-2 text-sm font-mono text-text text-center tracking-widest">${phrase}</span>
+            <button
+              id="sender-copy-phrase-btn"
+              class="bg-surface border border-gray-700 rounded px-4 py-2 text-sm text-text hover:border-accent transition-colors"
+            >Copy</button>
+          </div>
         </div>
       </div>
 
@@ -117,6 +141,17 @@ export function createSenderUI(
     });
   });
   linkInput.addEventListener("click", () => linkInput.select());
+
+  // Copy phrase button
+  const copyPhraseBtn = container.querySelector(
+    "#sender-copy-phrase-btn"
+  ) as HTMLButtonElement;
+  copyPhraseBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(phrase).then(() => {
+      copyPhraseBtn.textContent = "Copied!";
+      setTimeout(() => (copyPhraseBtn.textContent = "Copy"), 2000);
+    });
+  });
 
   // Disconnect
   const disconnectBtn = container.querySelector(

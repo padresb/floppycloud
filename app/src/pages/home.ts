@@ -29,7 +29,7 @@ export function renderHomePage(container: HTMLElement): void {
 
         <!-- Title -->
         <h1 class="font-heading text-3xl text-accent glow-green mb-2 tracking-wider">floppy.cloud</h1>
-        <p class="text-muted text-sm mb-10">No login. No storage. Direct.</p>
+        <p class="text-muted text-sm mb-10">No login. No storage. Secure direct transfers.</p>
 
         <!-- Primary CTA -->
         <button id="home-start-btn" class="btn-primary w-full mb-8">

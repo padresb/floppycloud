@@ -2,8 +2,8 @@
   "name": "floppycloud",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter app dev",
-    "dev:all": "concurrently \"pnpm --filter worker dev\" \"pnpm --filter app dev\"",
+    "dev": "concurrently \"pnpm --filter worker dev\" \"pnpm --filter app dev\"",
+    "dev:app": "pnpm --filter app dev",
     "worker:deploy": "pnpm --filter worker deploy",
     "build": "pnpm --filter app build && pnpm --filter worker build",
     "deploy": "pnpm --filter worker deploy && pnpm --filter app deploy",
