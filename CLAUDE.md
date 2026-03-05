@@ -32,7 +32,7 @@ floppycloud/
 │   ├── wrangler.toml           # Cloudflare Worker config
 │   └── src/
 │       ├── index.ts            # Worker entry, routing, Env interface, CORS
-│       ├── room.ts             # TransferRoom Durable Object (30-min TTL, alarm cleanup)
+│       ├── room.ts             # TransferRoom Durable Object (30-min pre-connect TTL, 10-min idle TTL, alarm cleanup)
 │       ├── ratelimit.ts        # IP-based rate limiting via KV (multi-level)
 │       ├── turn.ts             # Cloudflare Calls TURN credential fetch + normalization
 │       ├── types.ts            # Worker types
@@ -46,7 +46,7 @@ floppycloud/
 - Phrase format: `adjective-noun` (e.g., `golden-harbor`) — no numbers, validated with `/^[a-z]+-[a-z]+$/` (6-40 chars)
 - Files stream P2P via WebRTC data channels, never touch the server
 - Session ends when sender disconnects — link permanently expires (DO storage cleared)
-- Session TTL: 30 min waiting for first connection; resets to 10 min idle once receiver joins, and again after each `TRANSFER_COMPLETE`
+- Session TTL: 30 min waiting for first connection; resets to 10 min idle once receiver joins, and resets again after each `TRANSFER_COMPLETE` — all three reset points in `worker/src/room.ts`
 - Sender/receiver logs prefixed `[sender]`/`[receiver]` for all signaling and connection events
 
 ## Key Delivery

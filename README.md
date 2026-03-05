@@ -15,7 +15,11 @@ Floppy.cloud is a browser-based file transfer tool that sends files peer-to-peer
 3. Once they connect, a secure channel is established between your browsers
 4. Drop a file — it transfers directly to them
 
-When you close the tab, the session ends and the link expires permanently.
+Sessions expire automatically:
+
+- **30 minutes** if no receiver connects
+- **10 minutes** of idle time once connected (resets after each file transfer)
+- **Immediately** when the sender closes the tab
 
 **Two ways to share:**
 
