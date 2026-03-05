@@ -1,46 +1,28 @@
 import { DurableObject } from "cloudflare:workers";
 import { Env } from "./types";
 
-interface RoomState {
-  code: string;
-  senderSocket: WebSocket | null;
-  receiverSocket: WebSocket | null;
-  createdAt: number;
-  senderConnected: boolean;
-  receiverConnected: boolean;
-}
-
 export class TransferRoom extends DurableObject {
-  private state: RoomState;
   private readonly TTL_MS: number = 1_800_000; // 30 minutes
+  private senderConnected = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    this.state = {
-      code: "",
-      senderSocket: null,
-      receiverSocket: null,
-      createdAt: Date.now(),
-      senderConnected: false,
-      receiverConnected: false,
-    };
     // Schedule cleanup alarm
     ctx.storage.setAlarm(Date.now() + this.TTL_MS);
   }
 
   async alarm() {
-    // TTL expired — close all sockets and clean up
     const expiredMsg = JSON.stringify({ type: "ROOM_EXPIRED" });
-    this.state.senderSocket?.send(expiredMsg);
-    this.state.receiverSocket?.send(expiredMsg);
-    this.state.senderSocket?.close(1000, "Session expired");
-    this.state.receiverSocket?.close(1000, "Session expired");
+    for (const ws of this.ctx.getWebSockets()) {
+      ws.send(expiredMsg);
+      ws.close(1000, "Session expired");
+    }
     await this.ctx.storage.deleteAll();
   }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const role = url.searchParams.get("role"); // "sender" | "receiver"
+    const role = url.searchParams.get("role");
     const code = url.searchParams.get("code") ?? "";
 
     if (request.headers.get("Upgrade") !== "websocket") {
@@ -48,59 +30,75 @@ export class TransferRoom extends DurableObject {
     }
 
     const [client, server] = Object.values(new WebSocketPair());
-    this.ctx.acceptWebSocket(server);
 
     if (role === "sender") {
-      this.state.senderSocket = server;
-      this.state.senderConnected = true;
-      this.state.code = code;
+      this.ctx.acceptWebSocket(server, ["sender"]);
+      this.senderConnected = true;
     } else if (role === "receiver") {
-      if (!this.state.senderConnected) {
+      // Check if a sender is connected
+      const senders = this.ctx.getWebSockets("sender");
+      if (senders.length === 0 && !this.senderConnected) {
         server.close(4001, "Room not found");
         return new Response(null, { status: 101, webSocket: client });
       }
-      this.state.receiverSocket = server;
-      this.state.receiverConnected = true;
+      this.ctx.acceptWebSocket(server, ["receiver"]);
       // Notify sender
-      this.state.senderSocket?.send(JSON.stringify({ type: "PEER_JOINED" }));
+      for (const ws of this.ctx.getWebSockets("sender")) {
+        ws.send(JSON.stringify({ type: "PEER_JOINED" }));
+      }
+    } else {
+      server.close(4002, "Invalid role");
+      return new Response(null, { status: 101, webSocket: client });
     }
 
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws: WebSocket, message: string) {
-    const msg = JSON.parse(message);
-    const isSender = ws === this.state.senderSocket;
-    const target = isSender ? this.state.receiverSocket : this.state.senderSocket;
+    const msg = JSON.parse(message as string);
+    const tags = this.ctx.getTags(ws);
+    const isSender = tags.includes("sender");
+    const targetTag = isSender ? "receiver" : "sender";
+    const targets = this.ctx.getWebSockets(targetTag);
 
     // Relay OFFER, ANSWER, ICE_CANDIDATE directly to the other peer
     const relayTypes = ["OFFER", "ANSWER", "ICE_CANDIDATE"];
-    if (relayTypes.includes(msg.type) && target) {
-      target.send(message);
+    if (relayTypes.includes(msg.type)) {
+      for (const target of targets) {
+        target.send(message as string);
+      }
     }
 
     if (msg.type === "TRANSFER_COMPLETE") {
-      // Relay to other peer — room stays open for subsequent files
-      target?.send(JSON.stringify({ type: "TRANSFER_COMPLETE" }));
+      for (const target of targets) {
+        target.send(JSON.stringify({ type: "TRANSFER_COMPLETE" }));
+      }
     }
 
     if (msg.type === "DISCONNECT") {
-      // Sender is ending the session — notify receiver and tear down
-      target?.send(JSON.stringify({ type: "DISCONNECT" }));
+      for (const target of targets) {
+        target.send(JSON.stringify({ type: "DISCONNECT" }));
+      }
       await new Promise(r => setTimeout(r, 500));
-      this.state.senderSocket?.close(1000, "Session ended");
-      this.state.receiverSocket?.close(1000, "Session ended");
+      for (const w of this.ctx.getWebSockets()) {
+        w.close(1000, "Session ended");
+      }
       await this.ctx.storage.deleteAll();
     }
   }
 
   async webSocketClose(ws: WebSocket) {
-    const isSender = ws === this.state.senderSocket;
-    const target = isSender ? this.state.receiverSocket : this.state.senderSocket;
-    target?.send(JSON.stringify({
-      type: "ERROR",
-      error: { code: "PEER_DISCONNECTED", message: "The other peer disconnected." }
-    }));
-    target?.close(1000, "Peer disconnected");
+    const tags = this.ctx.getTags(ws);
+    const isSender = tags.includes("sender");
+    const targetTag = isSender ? "receiver" : "sender";
+    const targets = this.ctx.getWebSockets(targetTag);
+
+    for (const target of targets) {
+      target.send(JSON.stringify({
+        type: "ERROR",
+        error: { code: "PEER_DISCONNECTED", message: "The other peer disconnected." }
+      }));
+      target.close(1000, "Peer disconnected");
+    }
   }
 }
