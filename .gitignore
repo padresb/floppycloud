@@ -2,6 +2,7 @@ node_modules/
 dist/
 .dev.vars
 .env.local
+.env.*.local
 .env
 .wrangler/
 *.log
