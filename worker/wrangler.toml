@@ -11,7 +11,7 @@ class_name = "TransferRoom"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["TransferRoom"]
+new_sqlite_classes = ["TransferRoom"]
 
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
