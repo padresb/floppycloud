@@ -14,6 +14,7 @@ export interface SenderUIOptions {
 export interface SenderUI {
   onPeerJoined: () => void;
   onChannelReady: () => void;
+  onConnectionType: (isRelay: boolean) => void;
   onTransferProgress: (pct: number, speed?: string) => void;
   onTransferComplete: (
     fileName: string,
@@ -40,6 +41,7 @@ export function createSenderUI(
           <span class="font-heading text-xl tracking-wide" id="sender-phrase">${displayPhrase}</span>
         </div>
         <p class="text-muted text-sm mt-2" id="sender-status">Waiting for receiver...</p>
+        <p class="text-warning text-xs mt-1 hidden" id="sender-relay-notice">Relayed via TURN (not direct P2P)</p>
       </div>
 
       <!-- Share section -->
@@ -208,6 +210,13 @@ export function createSenderUI(
       disconnectBtn.className =
         "mt-4 bg-surface border border-gray-700 rounded px-6 py-2 text-sm text-warning hover:border-warning transition-colors font-mono cursor-pointer";
     },
+    onConnectionType(isRelay: boolean) {
+      if (isRelay) {
+        const notice = container.querySelector("#sender-relay-notice") as HTMLElement;
+        notice.classList.remove("hidden");
+      }
+    },
+
     onChannelReady() {
       const padlock = container.querySelector(
         "#sender-padlock"

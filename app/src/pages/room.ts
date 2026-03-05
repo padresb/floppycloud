@@ -135,6 +135,21 @@ async function initSender(
               "error"
             );
           }
+          if (pc?.connectionState === "connected") {
+            pc.getStats().then((stats) => {
+              let isRelay = false;
+              stats.forEach((report: any) => {
+                if (report.type === "candidate-pair" && report.nominated) {
+                  const local = stats.get(report.localCandidateId);
+                  if ((local as any)?.candidateType === "relay") {
+                    isRelay = true;
+                  }
+                }
+              });
+              console.log("[sender] connection type:", isRelay ? "TURN relay" : "direct P2P");
+              ui.onConnectionType(isRelay);
+            });
+          }
         };
 
         // Create data channel
