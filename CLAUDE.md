@@ -88,7 +88,7 @@ KV windowing logic is in `worker/src/ratelimit.ts`. To change a limit, update th
 - Includes `Vary: Origin` header
 
 ## Environment Variables
-- Frontend (Vite): `VITE_API_URL` (default: `http://localhost:8787` for dev), `VITE_MAX_FILE_SIZE_MB` (default: 2048)
+- Frontend (Vite): `VITE_API_URL` (`https://api.floppy.cloud` in production / frontend-only dev; `http://localhost:8787` only when running full local stack via `wrangler dev`), `VITE_MAX_FILE_SIZE_MB` (default: 2048)
 - Worker secrets: `CF_CALLS_APP_ID`, `CF_CALLS_APP_SECRET` (set via `wrangler secret put`)
 - Worker vars (wrangler.toml): `MAX_FILE_SIZE_MB`, `SESSION_TTL_SECONDS`, `CHUNK_SIZE_BYTES`, `ENVIRONMENT`
 
