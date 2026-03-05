@@ -2,7 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 import { Env } from "./types";
 
 export class TransferRoom extends DurableObject {
-  private readonly TTL_MS: number = 1_800_000; // 30 minutes
+  private readonly TTL_MS: number = 1_800_000;  // 30 min — waiting for first connection
+  private readonly IDLE_TTL_MS: number = 600_000; // 10 min — idle after connection/transfer
   private senderConnected = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -42,6 +43,8 @@ export class TransferRoom extends DurableObject {
         return new Response(null, { status: 101, webSocket: client });
       }
       this.ctx.acceptWebSocket(server, ["receiver"]);
+      // Switch to idle TTL now that both peers are connected
+      await this.ctx.storage.setAlarm(Date.now() + this.IDLE_TTL_MS);
       // Notify sender
       for (const ws of this.ctx.getWebSockets("sender")) {
         ws.send(JSON.stringify({ type: "PEER_JOINED" }));
@@ -73,6 +76,8 @@ export class TransferRoom extends DurableObject {
       for (const target of targets) {
         target.send(JSON.stringify({ type: "TRANSFER_COMPLETE" }));
       }
+      // Restart idle timer — 10 more minutes for next file
+      await this.ctx.storage.setAlarm(Date.now() + this.IDLE_TTL_MS);
     }
 
     if (msg.type === "DISCONNECT") {

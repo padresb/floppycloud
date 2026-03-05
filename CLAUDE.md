@@ -46,6 +46,7 @@ floppycloud/
 - Phrase format: `adjective-noun` (e.g., `golden-harbor`) — no numbers, validated with `/^[a-z]+-[a-z]+$/` (6-40 chars)
 - Files stream P2P via WebRTC data channels, never touch the server
 - Session ends when sender disconnects — link permanently expires (DO storage cleared)
+- Session TTL: 30 min waiting for first connection; resets to 10 min idle once receiver joins, and again after each `TRANSFER_COMPLETE`
 - Sender/receiver logs prefixed `[sender]`/`[receiver]` for all signaling and connection events
 
 ## Key Delivery
