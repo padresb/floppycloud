@@ -75,10 +75,21 @@ export default {
       const limited = await checkRateLimit(env, ip, "turn", 20, 60);
       if (limited) return new Response("Rate limit exceeded", { status: 429, headers: corsHeaders });
 
-      const credentials = await getTurnCredentials(env);
-      return new Response(JSON.stringify(credentials), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      try {
+        const credentials = await getTurnCredentials(env);
+        return new Response(JSON.stringify(credentials), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch {
+        // Fallback to STUN-only if TURN credentials aren't configured
+        const fallback = {
+          iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+          ttl: 86400,
+        };
+        return new Response(JSON.stringify(fallback), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     return new Response("Not found", { status: 404, headers: corsHeaders });
