@@ -14,7 +14,11 @@ export interface SenderUIOptions {
 export interface SenderUI {
   onPeerJoined: () => void;
   onTransferProgress: (pct: number, speed?: string) => void;
-  onTransferComplete: () => void;
+  onTransferComplete: (
+    fileName: string,
+    elapsedSeconds: number,
+    secure: boolean
+  ) => void;
   onSessionEnded: () => void;
 }
 
@@ -68,6 +72,14 @@ export function createSenderUI(
         <p class="text-sm text-text mb-2" id="sender-file-info"></p>
         <div id="sender-progress-bar"></div>
         <p class="text-accent text-sm mt-2 hidden" id="sender-sent-msg">Sent</p>
+      </div>
+
+      <!-- Transfer log -->
+      <div class="bg-surface rounded-lg border border-gray-800 p-4 mb-6">
+        <p class="text-xs uppercase tracking-widest text-accent mb-2">Transfer Log</p>
+        <ul id="sender-log-list" class="text-sm text-muted space-y-1">
+          <li id="sender-log-empty">No files transferred yet.</li>
+        </ul>
       </div>
 
       <!-- Hidden file input -->
@@ -207,12 +219,21 @@ export function createSenderUI(
       updateProgress(progressBar, pct, speed);
     },
 
-    onTransferComplete() {
+    onTransferComplete(fileName: string, elapsedSeconds: number, secure: boolean) {
       updateProgress(progressBar, 100);
       const sentMsg = container.querySelector(
         "#sender-sent-msg"
       ) as HTMLElement;
       sentMsg.classList.remove("hidden");
+
+      const logList = container.querySelector("#sender-log-list") as HTMLUListElement;
+      const empty = container.querySelector("#sender-log-empty");
+      if (empty) empty.remove();
+      const item = document.createElement("li");
+      item.className = "text-text";
+      const securityLabel = secure ? "file security" : "transport security";
+      item.textContent = `${fileName} ${securityLabel} transferred in ${formatSeconds(elapsedSeconds)} seconds`;
+      logList.prepend(item);
 
       // Reset after brief pause
       setTimeout(() => {
@@ -260,4 +281,8 @@ export function createSenderUI(
       };
     },
   };
+}
+
+function formatSeconds(seconds: number): string {
+  return seconds >= 10 ? seconds.toFixed(1) : seconds.toFixed(2);
 }

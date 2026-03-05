@@ -13,7 +13,12 @@ export interface ReceiverUI {
   onConnected: () => void;
   onMetadata: (meta: TransferMetadata) => void;
   onTransferProgress: (pct: number, speed?: string) => void;
-  onTransferComplete: (blob: Blob, fileName: string) => void;
+  onTransferComplete: (
+    blob: Blob,
+    fileName: string,
+    elapsedSeconds: number,
+    secure: boolean
+  ) => void;
   onSessionEnded: () => void;
 }
 
@@ -50,6 +55,14 @@ export function createReceiverUI(
         <p class="text-sm text-text mb-2" id="recv-file-info"></p>
         <div id="recv-progress-bar"></div>
         <p class="text-accent text-sm mt-2 hidden" id="recv-saved-msg">Saved</p>
+      </div>
+
+      <!-- Transfer log -->
+      <div class="bg-surface rounded-lg border border-gray-800 p-4 mb-6">
+        <p class="text-xs uppercase tracking-widest text-accent mb-2">Transfer Log</p>
+        <ul id="recv-log-list" class="text-sm text-muted space-y-1">
+          <li id="recv-log-empty">No files received yet.</li>
+        </ul>
       </div>
 
       <!-- Actions -->
@@ -120,7 +133,12 @@ export function createReceiverUI(
       updateProgress(progressBar, pct, speed);
     },
 
-    onTransferComplete(blob: Blob, fileName: string) {
+    onTransferComplete(
+      blob: Blob,
+      fileName: string,
+      elapsedSeconds: number,
+      secure: boolean
+    ) {
       updateProgress(progressBar, 100);
 
       // Auto-download
@@ -137,6 +155,15 @@ export function createReceiverUI(
         "#recv-saved-msg"
       ) as HTMLElement;
       savedMsg.classList.remove("hidden");
+
+      const logList = container.querySelector("#recv-log-list") as HTMLUListElement;
+      const empty = container.querySelector("#recv-log-empty");
+      if (empty) empty.remove();
+      const item = document.createElement("li");
+      item.className = "text-text";
+      const securityLabel = secure ? "file security" : "transport security";
+      item.textContent = `${fileName} ${securityLabel} received in ${formatSeconds(elapsedSeconds)} seconds`;
+      logList.prepend(item);
 
       // Reset for next file after delay
       setTimeout(() => {
@@ -191,4 +218,8 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024 * 1024)
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatSeconds(seconds: number): string {
+  return seconds >= 10 ? seconds.toFixed(1) : seconds.toFixed(2);
 }

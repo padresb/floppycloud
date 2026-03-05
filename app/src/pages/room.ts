@@ -79,7 +79,8 @@ async function initSender(
           });
 
           signaling.send("TRANSFER_COMPLETE");
-          ui.onTransferComplete();
+          const elapsedSeconds = (Date.now() - transferStartTime) / 1000;
+          ui.onTransferComplete(file.name, elapsedSeconds, true);
         } catch (err) {
           showToast("Transfer failed. Try again.", "error");
         }
@@ -219,6 +220,7 @@ async function initReceiver(
   const signaling = new SignalingClient();
   let pc: RTCPeerConnection | null = null;
   let cryptoKey: CryptoKey | null = null;
+  let receiveStartTime = 0;
 
   // Parse key from URL hash
   const hash = window.location.hash;
@@ -296,13 +298,17 @@ async function initReceiver(
               key,
               (meta: TransferMetadata) => {
                 currentFileName = meta.fileName;
+                receiveStartTime = Date.now();
                 ui.onMetadata(meta);
               },
               (pct: number) => {
                 ui.onTransferProgress(pct);
               }
             ).then((blob) => {
-              ui.onTransferComplete(blob, currentFileName);
+              const elapsedSeconds = receiveStartTime > 0
+                ? (Date.now() - receiveStartTime) / 1000
+                : 0;
+              ui.onTransferComplete(blob, currentFileName, elapsedSeconds, true);
             });
           } else {
             // No key — transport-only encryption, still receive but without extra AES layer
@@ -391,20 +397,26 @@ function handleRawReceive(ui: ReturnType<typeof createReceiverUI>) {
   let metadata: TransferMetadata | null = null;
   const chunks: ArrayBuffer[] = [];
   let received = 0;
+  let startedAt = 0;
 
   return (e: MessageEvent) => {
     if (typeof e.data === "string") {
       const msg = JSON.parse(e.data);
       if (msg.type === "METADATA") {
         metadata = msg.payload as TransferMetadata;
+        startedAt = Date.now();
         ui.onMetadata(metadata);
       } else if (msg.type === "TRANSFER_COMPLETE" && metadata) {
         const blob = new Blob(chunks, { type: metadata.fileType });
-        ui.onTransferComplete(blob, metadata.fileName);
+        const elapsedSeconds = startedAt > 0
+          ? (Date.now() - startedAt) / 1000
+          : 0;
+        ui.onTransferComplete(blob, metadata.fileName, elapsedSeconds, false);
         // Reset for next file
         metadata = null;
         chunks.length = 0;
         received = 0;
+        startedAt = 0;
       }
     } else if (e.data instanceof ArrayBuffer && metadata) {
       // No decryption needed — raw chunks
