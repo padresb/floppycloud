@@ -1,5 +1,7 @@
 # Floppy.cloud
 
+This application is for simple secure file transfer via any browser.
+
 Send files directly to another person — no account, no storage, no middleman.
 
 ## What it does
