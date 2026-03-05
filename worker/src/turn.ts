@@ -15,6 +15,36 @@ interface TurnApiResponse {
   iceServers: IceServer | IceServer[];
 }
 
+function normalizeIceServers(input: IceServer[]): IceServer[] {
+  const normalized: IceServer[] = [];
+  const seen = new Set<string>();
+
+  for (const server of input) {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    for (const url of urls) {
+      if (seen.has(url)) continue;
+      seen.add(url);
+
+      if (url.startsWith("stun:")) {
+        // STUN does not need credentials.
+        normalized.push({ urls: url });
+      } else {
+        normalized.push({
+          urls: url,
+          username: server.username,
+          credential: server.credential,
+        });
+      }
+    }
+  }
+
+  if (!seen.has("stun:stun.cloudflare.com:3478")) {
+    normalized.unshift({ urls: "stun:stun.cloudflare.com:3478" });
+  }
+
+  return normalized;
+}
+
 export async function getTurnCredentials(env: Env): Promise<TurnCredentials> {
   const response = await fetch(
     `https://rtc.live.cloudflare.com/v1/turn/keys/${env.CF_CALLS_APP_ID}/credentials/generate`,
@@ -37,12 +67,8 @@ export async function getTurnCredentials(env: Env): Promise<TurnCredentials> {
     ? data.iceServers
     : [data.iceServers];
 
-  // Always include public STUN as primary (free, no relay)
   return {
-    iceServers: [
-      { urls: "stun:stun.cloudflare.com:3478" },
-      ...turnServers,
-    ],
+    iceServers: normalizeIceServers(turnServers),
     ttl: 86400,
   };
 }

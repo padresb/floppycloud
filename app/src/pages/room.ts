@@ -127,7 +127,7 @@ async function initSender(
           console.log("[sender] connection state:", pc?.connectionState);
           if (
             !senderConnectFailedShown &&
-            (pc?.connectionState === "failed" || pc?.connectionState === "disconnected")
+            pc?.connectionState === "failed"
           ) {
             senderConnectFailedShown = true;
             showToast(
@@ -299,7 +299,7 @@ async function initReceiver(
           console.log("[receiver] connection state:", pc?.connectionState);
           if (
             !receiverConnectFailedShown &&
-            (pc?.connectionState === "failed" || pc?.connectionState === "disconnected")
+            pc?.connectionState === "failed"
           ) {
             receiverConnectFailedShown = true;
             showToast(
