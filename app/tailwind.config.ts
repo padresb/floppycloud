@@ -10,7 +10,7 @@ export default {
         accent: "#00FF87",
         "accent-dim": "#00CC6A",
         warning: "#FF6B35",
-        muted: "#555555",
+        muted: "#888888",
         text: "#E8E8E8",
       },
       fontFamily: {

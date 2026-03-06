@@ -17,7 +17,7 @@ export function chatPanelHTML(): string {
           id="chat-input"
           type="text"
           placeholder="type a message..."
-          class="flex-1 bg-bg border border-gray-700 rounded px-3 py-1.5 text-sm font-mono text-text placeholder-gray-600 focus:outline-none focus:border-accent"
+          class="flex-1 bg-bg border border-gray-700 rounded px-3 py-1.5 text-sm font-mono text-text placeholder-muted focus:outline-none focus:border-accent"
         />
         <button id="chat-send-btn" class="bg-surface border border-gray-700 rounded px-3 py-1.5 text-sm font-mono text-accent hover:border-accent transition-colors">Send</button>
       </div>
@@ -82,9 +82,8 @@ export function initChat(container: HTMLElement): ChatPanel {
     label.textContent = isMe ? "You" : "Them";
 
     const bubble = document.createElement("div");
-    bubble.className = `rounded px-3 py-1.5 text-sm font-mono text-text max-w-xs break-words bg-bg border ${
-      isMe ? "border-accent" : "border-gray-700"
-    }`;
+    bubble.className = `rounded px-3 py-1.5 text-sm font-mono text-text max-w-xs break-words bg-bg border ${isMe ? "border-accent" : "border-gray-700"
+      }`;
     bubble.textContent = text;
 
     wrapper.appendChild(label);

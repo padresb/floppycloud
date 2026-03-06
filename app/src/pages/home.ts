@@ -49,7 +49,7 @@ export function renderHomePage(container: HTMLElement): void {
             type="text"
             id="home-phrase-input"
             placeholder="golden \u00B7 harbor"
-            class="flex-1 bg-surface border border-gray-700 rounded px-4 py-3 text-sm font-mono text-text placeholder-gray-600 focus:outline-none focus:border-accent transition-colors"
+            class="flex-1 bg-surface border border-gray-700 rounded px-4 py-3 text-sm font-mono text-text placeholder-muted focus:outline-none focus:border-accent transition-colors"
           />
           <button
             id="home-connect-btn"
@@ -74,7 +74,7 @@ export function renderHomePage(container: HTMLElement): void {
               <span>Drop a file &mdash; it transfers directly, peer-to-peer, encrypted</span>
             </li>
           </ol>
-          <p class="text-xs text-gray-600 mt-4">Sessions expire after 30 minutes of inactivity. Max file size: 2 GB.</p>
+          <p class="text-xs text-muted mt-4">Sessions expire after 30 minutes of inactivity. Max file size: 2 GB.</p>
         </div>
 
         <!-- Footer -->

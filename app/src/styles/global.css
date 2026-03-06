@@ -181,7 +181,7 @@ body {
 }
 
 .padlock.ended {
-  color: #555;
+  color: #888;
   filter: none;
 }
 
@@ -213,7 +213,7 @@ body {
 
 /* ---- Drop zone ---- */
 .drop-zone {
-  border: 2px dashed #555;
+  border: 2px dashed #888;
   border-radius: 8px;
   padding: 3rem 2rem;
   text-align: center;
@@ -273,7 +273,7 @@ body {
 }
 
 .toast.toast-info {
-  border-color: #555;
+  border-color: #888;
 }
 
 .toast.toast-out {
@@ -347,7 +347,7 @@ body {
 }
 
 .link-muted {
-  color: #555;
+  color: #888;
   text-decoration: underline;
   cursor: pointer;
   font-size: 0.8rem;
@@ -358,7 +358,7 @@ body {
 }
 
 .link-muted:hover {
-  color: #888;
+  color: #aaa;
 }
 
 /* ---- Typing indicator ---- */
