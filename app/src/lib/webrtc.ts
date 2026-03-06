@@ -30,11 +30,5 @@ export function createPeerConnection(
     if (e.candidate) onIceCandidate(e.candidate);
   };
 
-  pc.oniceconnectionstatechange = () => {
-    if (pc.iceConnectionState === "failed") {
-      pc.restartIce();
-    }
-  };
-
   return pc;
 }

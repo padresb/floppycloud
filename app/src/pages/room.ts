@@ -130,6 +130,13 @@ async function initSender(
 
         pc.oniceconnectionstatechange = () => {
           console.log("[sender] ICE state:", pc?.iceConnectionState);
+          if (pc?.iceConnectionState === "failed") {
+            console.log("[sender] ICE failed — restarting ICE via re-offer");
+            pc.createOffer({ iceRestart: true })
+              .then((offer) => pc!.setLocalDescription(offer).then(() => offer))
+              .then((offer) => signaling.send("OFFER", { sdp: offer.sdp, type: offer.type }))
+              .catch((err) => console.error("[sender] ICE restart failed:", err));
+          }
         };
         pc.onconnectionstatechange = () => {
           console.log("[sender] connection state:", pc?.connectionState);
@@ -324,6 +331,17 @@ async function initReceiver(
       try {
         console.log("[receiver] OFFER received");
         const p = payload as { sdp: string; type: RTCSdpType };
+
+        // ICE restart re-offer: reuse the existing peer connection
+        if (pc) {
+          console.log("[receiver] ICE restart re-offer — reusing existing PC");
+          await pc.setRemoteDescription(new RTCSessionDescription(p));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          console.log("[receiver] sending ANSWER (ICE restart)");
+          signaling.send("ANSWER", { sdp: answer.sdp, type: answer.type });
+          return;
+        }
 
         const iceConfig = await getIceConfig();
         console.log("[receiver] ICE config:", iceConfig);
