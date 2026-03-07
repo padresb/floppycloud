@@ -33,7 +33,7 @@ async function initSender(
   let transferStartTime = 0;
   let lastProgressBytes = 0;
   const pendingSenderCandidates: RTCIceCandidateInit[] = [];
-  let senderConnectFailedShown = false;
+  let failedConnectionTimer: ReturnType<typeof setTimeout> | null = null;
 
   try {
     // Generate crypto key
@@ -140,17 +140,24 @@ async function initSender(
         };
         pc.onconnectionstatechange = () => {
           console.log("[sender] connection state:", pc?.connectionState);
-          if (
-            !senderConnectFailedShown &&
-            pc?.connectionState === "failed"
-          ) {
-            senderConnectFailedShown = true;
-            showToast(
-              "Could not establish secure channel. Ask receiver to reconnect.",
-              "error"
-            );
+          if (pc?.connectionState === "failed") {
+            if (!failedConnectionTimer) {
+              failedConnectionTimer = setTimeout(() => {
+                failedConnectionTimer = null;
+                if (pc?.connectionState !== "connected") {
+                  showToast(
+                    "Could not establish secure channel. Ask receiver to reconnect.",
+                    "error"
+                  );
+                }
+              }, 15000);
+            }
           }
           if (pc?.connectionState === "connected") {
+            if (failedConnectionTimer) {
+              clearTimeout(failedConnectionTimer);
+              failedConnectionTimer = null;
+            }
             pc.getStats().then((stats) => {
               let isRelay = false;
               stats.forEach((report: any) => {
@@ -162,6 +169,9 @@ async function initSender(
                 }
               });
               console.log("[sender] connection type:", isRelay ? "TURN relay" : "direct P2P");
+              if (isRelay) {
+                showToast("Connection relayed via TURN (not direct P2P)", "info");
+              }
               ui.onConnectionType(isRelay);
             });
           }
@@ -292,7 +302,7 @@ async function initReceiver(
   let cryptoKey: CryptoKey | null = null;
   let receiveStartTime = 0;
   const pendingReceiverCandidates: RTCIceCandidateInit[] = [];
-  let receiverConnectFailedShown = false;
+  let failedConnectionTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Parse key from URL hash
   const hash = window.location.hash;
@@ -357,15 +367,24 @@ async function initReceiver(
         };
         pc.onconnectionstatechange = () => {
           console.log("[receiver] connection state:", pc?.connectionState);
-          if (
-            !receiverConnectFailedShown &&
-            pc?.connectionState === "failed"
-          ) {
-            receiverConnectFailedShown = true;
-            showToast(
-              "Could not establish secure channel. Reopen the sender link and try again.",
-              "error"
-            );
+          if (pc?.connectionState === "failed") {
+            if (!failedConnectionTimer) {
+              failedConnectionTimer = setTimeout(() => {
+                failedConnectionTimer = null;
+                if (pc?.connectionState !== "connected") {
+                  showToast(
+                    "Could not establish secure channel. Reopen the sender link and try again.",
+                    "error"
+                  );
+                }
+              }, 15000);
+            }
+          }
+          if (pc?.connectionState === "connected") {
+            if (failedConnectionTimer) {
+              clearTimeout(failedConnectionTimer);
+              failedConnectionTimer = null;
+            }
           }
         };
 
