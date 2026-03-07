@@ -14,6 +14,7 @@ Floppy.cloud is a browser-based file transfer tool that sends files peer-to-peer
 2. Share it with the person you're sending to — either the full link or just the two-word phrase
 3. Once they connect, a secure channel is established between your browsers
 4. Drop a file — it transfers directly to them
+5. Chat in real time while connected — messages are sent over the same encrypted peer-to-peer channel
 
 Sessions expire automatically:
 
@@ -38,6 +39,7 @@ Sessions expire automatically:
 - Up to 2 GB per transfer
 - One file at a time
 - Both sender and receiver must be online simultaneously
+- Chat messages are not persisted — they disappear when the session ends
 - Rate limited per IP: 10 new sessions/min, 30 connections/min, 100 total requests/min
 
 ## Tech
