@@ -116,6 +116,17 @@ async function initSender(
     signaling.on("PEER_JOINED", async () => {
       try {
         console.log("[sender] PEER_JOINED received");
+
+        // Tear down any previous connection (e.g. receiver navigated away and reconnected)
+        if (pc) {
+          if (failedConnectionTimer) { clearTimeout(failedConnectionTimer); failedConnectionTimer = null; }
+          dataChannel?.close();
+          chatChannel?.close();
+          pc.close();
+          pc = null;
+          pendingSenderCandidates.splice(0);
+        }
+
         ui.onPeerJoined();
 
         // Set up WebRTC
@@ -317,6 +328,7 @@ async function initReceiver(
   const ui = createReceiverUI(container, {
     phrase,
     onLeave: () => {
+      signaling.send("DISCONNECT");
       cleanup();
       window.location.href = "/";
     },
