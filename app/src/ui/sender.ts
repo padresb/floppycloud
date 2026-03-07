@@ -45,7 +45,7 @@ export function createSenderUI(
           <span class="font-heading text-xl tracking-wide" id="sender-phrase">${displayPhrase}</span>
         </div>
         <p class="text-muted text-sm mt-2" id="sender-status">Waiting for receiver...</p>
-        <p class="text-warning text-xs mt-1 hidden" id="sender-relay-notice">Relayed via TURN (not direct P2P)</p>
+        <p class="text-white text-xs mt-1 hidden" id="sender-relay-notice">Relayed via TURN</p>
       </div>
 
       <!-- Share section -->
@@ -91,6 +91,11 @@ export function createSenderUI(
             >Copy</button>
           </div>
         </div>
+      </div>
+
+      <!-- Spinner (shown while establishing secure channel) -->
+      <div id="sender-spinner" class="hidden text-center mb-6">
+        <div class="inline-block w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
       </div>
 
       <!-- Drop zone (disabled initially) -->
@@ -249,6 +254,9 @@ export function createSenderUI(
         <p class="text-muted text-sm">Peer joined. Establishing secure channel...</p>
       `;
 
+      const spinner = container.querySelector("#sender-spinner") as HTMLElement;
+      spinner.classList.remove("hidden");
+
       disconnectBtn.textContent = "End Session";
       disconnectBtn.classList.remove("link-muted");
       disconnectBtn.className =
@@ -262,6 +270,9 @@ export function createSenderUI(
     },
 
     onChannelReady() {
+      const spinner = container.querySelector("#sender-spinner") as HTMLElement;
+      spinner.classList.add("hidden");
+
       const padlock = container.querySelector(
         "#sender-padlock"
       ) as HTMLElement;

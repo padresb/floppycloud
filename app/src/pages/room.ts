@@ -169,9 +169,6 @@ async function initSender(
                 }
               });
               console.log("[sender] connection type:", isRelay ? "TURN relay" : "direct P2P");
-              if (isRelay) {
-                showToast("Connection relayed via TURN (not direct P2P)", "info");
-              }
               ui.onConnectionType(isRelay);
             });
           }
